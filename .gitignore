@@ -1,0 +1,14 @@
+# Env
+.env
+.env.*
+!.env.example
+
+# Bicep / Azure 빌드 결과
+*.json.bak
+bicep-out/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
