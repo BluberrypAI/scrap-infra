@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # compose, Bicep 파일이 아직 없으면 해당 검사를 건너뛰고 통과함
+      - name: Validate compose files
+        run: |
+          files=$(git ls-files '*compose*.yml' '*compose*.yaml')
+          if [ -z "$files" ]; then echo "compose 파일 없음: 검사 건너뜀"; exit 0; fi
+          for f in $files; do
+            echo "== $f"
+            # 형제 레포를 빌드 경로로 쓰므로 build 경로 존재 여부는 검사하지 않고 문법만 확인함
+            docker compose -f "$f" config --no-path-resolution --quiet
+          done
+
+      - name: Validate Bicep files
+        run: |
+          files=$(git ls-files '*.bicep')
+          if [ -z "$files" ]; then echo "Bicep 파일 없음: 검사 건너뜀"; exit 0; fi
+          az bicep install
+          for f in $files; do
+            echo "== $f"
+            az bicep build --file "$f" --stdout > /dev/null
+          done
