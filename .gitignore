@@ -12,3 +12,6 @@ bicep-out/
 Thumbs.db
 .vscode/
 .idea/
+
+# 전국 명부 등 로컬 데이터 파일 (server-seed가 /registry로 읽음)
+data/
