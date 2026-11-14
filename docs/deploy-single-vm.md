@@ -40,15 +40,23 @@ exit   # 다시 접속해야 docker 그룹이 적용됨
 
 ## 3. 레포 받기
 
-로컬 폴더 구성과 같게 형제 폴더로 clone함. 비공개 레포면 `gh auth login` 또는 개인 토큰으로 받음.
+로컬 폴더 구성과 같게 형제 폴더로 clone함. 비공개 레포(scrap-server, scrap-diagnosis, scrap-infra)는 레포마다 읽기 전용 배포 키를 VM에 만들어 받음(GitHub는 배포 키 하나를 여러 레포에 쓸 수 없음).
 
 ```bash
+# 비공개 레포마다 키 만들기
+for r in scrap-server scrap-diagnosis scrap-infra; do
+  ssh-keygen -q -t ed25519 -N "" -C "vm-deploy-$r" -f ~/.ssh/deploy_$r
+  printf "Host github-%s\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/deploy_%s\n  IdentitiesOnly yes\n\n" $r $r >> ~/.ssh/config
+  cat ~/.ssh/deploy_$r.pub   # 레포 Settings → Deploy keys → Add (쓰기 권한 없이)
+done
+ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+
 mkdir -p ~/scrap && cd ~/scrap
 git clone -b main https://github.com/BluberrypAI/scrap-web.git
-git clone -b main https://github.com/BluberrypAI/scrap-server.git
-git clone -b main https://github.com/BluberrypAI/scrap-diagnosis.git
 git clone -b main https://github.com/BluberrypAI/scrap-route.git
-git clone -b main https://github.com/BluberrypAI/scrap-infra.git
+git clone -b main git@github-scrap-server:BluberrypAI/scrap-server.git
+git clone -b main git@github-scrap-diagnosis:BluberrypAI/scrap-diagnosis.git
+git clone -b main git@github-scrap-infra:BluberrypAI/scrap-infra.git
 cd scrap-infra
 ```
 
@@ -138,6 +146,32 @@ docker image prune -f               # 이전 이미지 정리 (디스크 확보)
 | 팀 비밀번호 변경 | 해시를 새로 만들어 `.env`에 넣고 `docker compose up -d caddy` |
 
 VM을 재부팅해도 컨테이너는 자동으로 다시 뜸.
+
+## 9. main에 올리면 자동 배포
+
+각 레포의 `.github/workflows/deploy-vm.yml`이 main push 때 VM에 SSH로 접속함. 이 키는 VM `authorized_keys`에 `restrict,command=".../deploy/update.sh"`로 등록해 배포 스크립트만 실행됨(셸 접속 불가). `update.sh`는 5개 레포를 모두 main 최신으로 받고 `docker compose up -d --build`를 실행함. 여러 레포가 동시에 올라와도 VM에서 하나씩 처리함.
+
+```bash
+# 이 PC에서 배포 전용 키 만들기
+ssh-keygen -q -t ed25519 -N "" -C github-actions-deploy -f ~/.ssh/scrap_actions_deploy
+# VM에 등록 (한 줄)
+echo "restrict,command=\"/home/azureuser/scrap/scrap-infra/deploy/update.sh\" $(cat ~/.ssh/scrap_actions_deploy.pub)" \
+  | ssh azureuser@<DNS 이름> 'cat >> ~/.ssh/authorized_keys'
+# VM 호스트 키 (VM_KNOWN_HOSTS 값)
+ssh-keyscan -t ed25519 <DNS 이름>
+```
+
+5개 레포 각각 Settings → Secrets and variables → Actions에 넣음.
+
+| 종류 | 이름 | 값 |
+| --- | --- | --- |
+| Secret | `VM_DEPLOY_SSH_KEY` | `~/.ssh/scrap_actions_deploy` 파일 내용 전체 |
+| Variable | `VM_HOST` | DNS 이름 |
+| Variable | `VM_USER` | `azureuser` |
+| Variable | `VM_KNOWN_HOSTS` | `ssh-keyscan` 결과 한 줄 |
+
+`VM_HOST`가 없는 레포는 배포 작업을 건너뜀. 수동 실행은 Actions → Deploy VM → Run workflow.
+`server-seed`(공정 참조 데이터)는 자동 배포에 넣지 않았음. 데이터가 바뀌면 `docker compose run --rm server-seed`를 직접 실행함.
 
 ## 주의
 
