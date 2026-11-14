@@ -1,0 +1,16 @@
+# 단일 VM 시험 배포 입구 (compose.deploy.yaml의 caddy)
+# - SITE_ADDRESS 이름으로 Let's Encrypt 인증서를 자동 발급·갱신하고, http는 https로 넘긴다
+# - 모든 경로에 팀 전용 비밀번호를 건다. 앱 로그인은 쿠키를 쓰므로 Basic 인증과 겹치지 않는다
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy web:80 {
+		# 팀 비밀번호 헤더는 앱까지 넘기지 않는다
+		header_up -Authorization
+	}
+}
