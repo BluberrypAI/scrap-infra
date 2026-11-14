@@ -44,15 +44,15 @@ exit   # 다시 접속해야 docker 그룹이 적용됨
 
 ```bash
 mkdir -p ~/scrap && cd ~/scrap
-git clone -b develop https://github.com/BluberrypAI/scrap-web.git
-git clone -b develop https://github.com/BluberrypAI/scrap-server.git
-git clone -b develop https://github.com/BluberrypAI/scrap-diagnosis.git
-git clone -b develop https://github.com/BluberrypAI/scrap-route.git
-git clone -b develop https://github.com/BluberrypAI/scrap-infra.git
+git clone -b main https://github.com/BluberrypAI/scrap-web.git
+git clone -b main https://github.com/BluberrypAI/scrap-server.git
+git clone -b main https://github.com/BluberrypAI/scrap-diagnosis.git
+git clone -b main https://github.com/BluberrypAI/scrap-route.git
+git clone -b main https://github.com/BluberrypAI/scrap-infra.git
 cd scrap-infra
 ```
 
-다른 브랜치를 올릴 때는 `-b <브랜치>`만 바꿈.
+배포는 각 레포의 `main`을 받음. 올릴 변경은 develop → main으로 병합해 둠. 다른 브랜치를 시험할 때는 `-b <브랜치>`만 바꿈.
 
 ## 4. .env 작성
 
