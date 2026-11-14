@@ -1,18 +1,20 @@
-# main에 올라오면 단일 VM 시험 배포를 갱신한다 (scrap-infra docs/deploy-single-vm.md)
-# VM에서 deploy/update.sh가 5개 레포를 모두 main 최신으로 받고 바뀐 서비스만 다시 빌드한다
-# 필요한 값 (레포 Settings → Secrets and variables → Actions)
-#   secrets.VM_DEPLOY_SSH_KEY  배포 전용 SSH 프라이빗 키 (VM에서 update.sh만 실행 가능)
-#   vars.VM_HOST               VM 주소 (예 scrap-test.eastus.cloudapp.azure.com)
-#   vars.VM_USER               VM 계정 (azureuser)
-#   vars.VM_KNOWN_HOSTS        VM 호스트 키 한 줄 (ssh-keyscan 결과)
-# VM_HOST가 없으면 건너뛴다
+# 단일 VM 시험 배포를 필요할 때만 수동으로 갱신한다 (docs/deploy-single-vm.md)
+# Actions → Deploy VM → Run workflow에서 브랜치를 고르면 VM의 5개 레포를 그 브랜치 최신으로 맞추고 다시 빌드한다
+# 자동 배포(push 트리거)는 두지 않는다. main 자동 배포는 정식 인프라를 만들 때 따로 구성한다
+# 필요한 값 (Settings → Secrets and variables → Actions)
+#   secrets.VM_DEPLOY_SSH_KEY  배포 전용 SSH 프라이빗 키 (VM에서 deploy/update.sh만 실행 가능)
+#   vars.VM_HOST, vars.VM_USER, vars.VM_KNOWN_HOSTS
 
 name: Deploy VM
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: VM에 올릴 브랜치 (5개 레포 공통)
+        type: choice
+        options: [develop, main]
+        default: develop
 
 concurrency:
   group: deploy-vm
@@ -20,7 +22,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: vars.VM_HOST != ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -38,4 +39,6 @@ jobs:
         env:
           VM_HOST: ${{ vars.VM_HOST }}
           VM_USER: ${{ vars.VM_USER }}
-        run: ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=30 "$VM_USER@$VM_HOST"
+          BRANCH: ${{ inputs.branch }}
+        # VM에서는 command=로 update.sh만 실행되고, 여기서 넘긴 브랜치 이름이 SSH_ORIGINAL_COMMAND로 들어간다
+        run: ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=30 "$VM_USER@$VM_HOST" "$BRANCH"

@@ -81,7 +81,7 @@ server가 이 API를 쓰기 시작하면 compose에 추가함.
 ## 단일 VM 시험 배포
 
 팀 내부 시험용으로 VM 한 대에 띄우는 절차는 [docs/deploy-single-vm.md](docs/deploy-single-vm.md) 참고.
-`compose.deploy.yaml`을 겹쳐 써서 caddy(HTTPS·팀 비밀번호)만 바깥에 열고 개발용 로그인을 켬.
+`compose.deploy.yaml`을 겹쳐 써서 caddy(HTTPS·팀 비밀번호)만 바깥에 열고 개발용 로그인을 켬. 배포는 Actions에서 수동 실행(자동 배포 없음).
 
 ## 브랜치
 

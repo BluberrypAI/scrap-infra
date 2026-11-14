@@ -52,15 +52,15 @@ done
 ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
 
 mkdir -p ~/scrap && cd ~/scrap
-git clone -b main https://github.com/BluberrypAI/scrap-web.git
-git clone -b main https://github.com/BluberrypAI/scrap-route.git
-git clone -b main git@github-scrap-server:BluberrypAI/scrap-server.git
-git clone -b main git@github-scrap-diagnosis:BluberrypAI/scrap-diagnosis.git
-git clone -b main git@github-scrap-infra:BluberrypAI/scrap-infra.git
+git clone -b develop https://github.com/BluberrypAI/scrap-web.git
+git clone -b develop https://github.com/BluberrypAI/scrap-route.git
+git clone -b develop git@github-scrap-server:BluberrypAI/scrap-server.git
+git clone -b develop git@github-scrap-diagnosis:BluberrypAI/scrap-diagnosis.git
+git clone -b develop git@github-scrap-infra:BluberrypAI/scrap-infra.git
 cd scrap-infra
 ```
 
-배포는 각 레포의 `main`을 받음. 올릴 변경은 develop → main으로 병합해 둠. 다른 브랜치를 시험할 때는 `-b <브랜치>`만 바꿈.
+시험 VM은 develop 기준으로 받음. 이후 브랜치 전환은 `deploy/update.sh <develop|main>`으로 함.
 
 ## 4. .env 작성
 
@@ -129,10 +129,9 @@ docker compose exec server python -m app.domains.transport.dev_accounts
 ## 8. 업데이트·재시작
 
 ```bash
-cd ~/scrap
-for d in scrap-web scrap-server scrap-diagnosis scrap-route scrap-infra; do git -C $d pull --ff-only; done
-cd scrap-infra
-docker compose up -d --build        # 바뀐 서비스만 다시 빌드됨
+~/scrap/scrap-infra/deploy/update.sh develop   # 5개 레포를 develop 최신으로 맞추고 다시 빌드 (main도 가능)
+cd ~/scrap/scrap-infra
+docker compose up -d --build        # 코드는 그대로 두고 다시 빌드만
 docker compose up -d --build web    # 한 서비스만
 docker image prune -f               # 이전 이미지 정리 (디스크 확보)
 ```
@@ -147,21 +146,22 @@ docker image prune -f               # 이전 이미지 정리 (디스크 확보)
 
 VM을 재부팅해도 컨테이너는 자동으로 다시 뜸.
 
-## 9. main에 올리면 자동 배포
+## 9. GitHub에서 수동 배포
 
-각 레포의 `.github/workflows/deploy-vm.yml`이 main push 때 VM에 SSH로 접속함. 이 키는 VM `authorized_keys`에 `restrict,command=".../deploy/update.sh"`로 등록해 배포 스크립트만 실행됨(셸 접속 불가). `update.sh`는 5개 레포를 모두 main 최신으로 받고 `docker compose up -d --build`를 실행함. 여러 레포가 동시에 올라와도 VM에서 하나씩 처리함.
+시험 VM은 자동 배포하지 않음. 필요할 때 scrap-infra **Actions → Deploy VM → Run workflow**에서 브랜치(develop·main)를 골라 실행함. main 자동 배포(CD)는 정식 인프라를 만들 때 따로 구성함.
+
+Actions는 VM에 SSH로 접속하는데, 이 키는 VM `authorized_keys`에 `restrict,command=".../deploy/update.sh"`로 등록해 배포 스크립트만 실행됨(셸 접속 불가). 고른 브랜치 이름은 `SSH_ORIGINAL_COMMAND`로 넘어가고, `update.sh`는 develop·main 외의 값은 거부함.
 
 ```bash
 # 이 PC에서 배포 전용 키 만들기
 ssh-keygen -q -t ed25519 -N "" -C github-actions-deploy -f ~/.ssh/scrap_actions_deploy
 # VM에 등록 (한 줄)
-echo "restrict,command=\"/home/azureuser/scrap/scrap-infra/deploy/update.sh\" $(cat ~/.ssh/scrap_actions_deploy.pub)" \
-  | ssh azureuser@<DNS 이름> 'cat >> ~/.ssh/authorized_keys'
+echo "restrict,command=\"/home/azureuser/scrap/scrap-infra/deploy/update.sh\" $(cat ~/.ssh/scrap_actions_deploy.pub)"   | ssh azureuser@<DNS 이름> 'cat >> ~/.ssh/authorized_keys'
 # VM 호스트 키 (VM_KNOWN_HOSTS 값)
 ssh-keyscan -t ed25519 <DNS 이름>
 ```
 
-5개 레포 각각 Settings → Secrets and variables → Actions에 넣음.
+scrap-infra Settings → Secrets and variables → Actions에 넣음.
 
 | 종류 | 이름 | 값 |
 | --- | --- | --- |
@@ -170,8 +170,7 @@ ssh-keyscan -t ed25519 <DNS 이름>
 | Variable | `VM_USER` | `azureuser` |
 | Variable | `VM_KNOWN_HOSTS` | `ssh-keyscan` 결과 한 줄 |
 
-`VM_HOST`가 없는 레포는 배포 작업을 건너뜀. 수동 실행은 Actions → Deploy VM → Run workflow.
-`server-seed`(공정 참조 데이터)는 자동 배포에 넣지 않았음. 데이터가 바뀌면 `docker compose run --rm server-seed`를 직접 실행함.
+`server-seed`(공정 참조 데이터)는 배포 스크립트에 넣지 않았음. 데이터가 바뀌면 `docker compose run --rm server-seed`를 직접 실행함.
 
 ## 주의
 
