@@ -21,10 +21,14 @@ jobs:
         run: |
           files=$(git ls-files '*compose*.yml' '*compose*.yaml')
           if [ -z "$files" ]; then echo "compose 파일 없음: 검사 건너뜀"; exit 0; fi
+          # 덮어쓰기 파일(compose.deploy.yaml 등)의 필수값은 검사용 임시값으로 채움
+          export SITE_ADDRESS=ci.example.com BASIC_AUTH_USER=ci BASIC_AUTH_HASH=ci
           for f in $files; do
             echo "== $f"
             # 형제 레포를 빌드 경로로 쓰므로 build 경로 존재 여부는 검사하지 않고 문법만 확인함
-            docker compose -f "$f" config --no-path-resolution --quiet
+            # compose.yaml 외의 파일은 그 위에 겹쳐 쓰는 덮어쓰기라 기본 파일과 함께 검사함
+            if [ "$f" = compose.yaml ]; then set -- -f "$f"; else set -- -f compose.yaml -f "$f"; fi
+            docker compose "$@" config --no-path-resolution --quiet
           done
 
       - name: Validate Bicep files

@@ -78,6 +78,11 @@ scrap-route의 Neo4j(지식그래프 `/kg/*`)와 pgvector(법령 검색 `/rag/*`
 지금 server가 부르는 scrap-route API(`/treatment/intake-reviews`, `/treatment/facility-web-search`)는 둘 다 쓰지 않음.
 server가 이 API를 쓰기 시작하면 compose에 추가함.
 
+## 단일 VM 시험 배포
+
+팀 내부 시험용으로 VM 한 대에 띄우는 절차는 [docs/deploy-single-vm.md](docs/deploy-single-vm.md) 참고.
+`compose.deploy.yaml`을 겹쳐 써서 caddy(HTTPS·팀 비밀번호)만 바깥에 열고 개발용 로그인을 켬.
+
 ## 브랜치
 
 작업 브랜치 → `develop` (PR, CI 통과 후 작성자가 병합) → `main` (배포, 서버 담당자)
