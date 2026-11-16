@@ -5,6 +5,7 @@
 #   deploy/azure/deploy.sh secrets   # Key Vault에 비밀값 넣기 (이미 있는 값은 그대로 둠)
 #   deploy/azure/deploy.sh images    # 4개 레포의 브랜치(기본 main)를 빌드해 ACR에 :main 태그로 올림
 #   deploy/azure/deploy.sh apps      # 2단계: App Service 앱 4개·배포 웹훅 + Front Door/WAF
+#   deploy/azure/deploy.sh seed      # 공정 참조 데이터 적재 (server 이미지가 ACR에 올라간 뒤)
 #   deploy/azure/deploy.sh all       # 위 네 단계를 순서대로
 #
 # 필요한 것: az(로그인 상태), docker, git. scrap-infra/.env에서 Azure OpenAI 값과 Mapbox 토큰을 읽음
@@ -185,11 +186,30 @@ cmd_apps() {
 	deploy_bicep true
 }
 
+# 공정 참조 데이터 적재. App Service 컨테이너에는 SSH로 들어갈 수 없어 DB VM에서 server 이미지를 한 번 실행함
+# 실행할 때마다 참조 데이터를 갈아끼움 (compose의 server-seed와 같음)
+cmd_seed() {
+	need az
+	local acr server acr_user acr_pw vault db_pw image
+	acr=$(acr_name); vault=$(kv_name)
+	[ -n "$acr" ] && [ -n "$vault" ] || die "ACR이나 Key Vault가 없음"
+	server=$(az acr show -n "$acr" --query loginServer -o tsv)
+	acr_user=$(az acr credential show -n "$acr" --query username -o tsv)
+	acr_pw=$(az acr credential show -n "$acr" --query "passwords[0].value" -o tsv)
+	db_pw=$(kv_get "$vault" postgres-admin-password)
+	image="$server/scrap-server:$DEPLOY_TAG"
+	echo "== 공정 참조 데이터 적재 ($image)"
+	az vm run-command invoke -g "$RG" -n vm-scrap-db --command-id RunShellScript --query "value[0].message" -o tsv \
+		--scripts "echo '$acr_pw' | docker login $server -u $acr_user --password-stdin >/dev/null && docker pull -q $image >/dev/null && docker run --rm --network host -e DATABASE_URL='postgresql+asyncpg://$DB_USER:$db_pw@127.0.0.1:5432/scrap_server' $image sh -c 'alembic upgrade head >/dev/null && python -m app.domains.treatment.import_catalog' ; docker logout $server >/dev/null" \
+		| grep -vE "^\[std(out|err)\]$|^Enable succeeded" || true
+}
+
 case "${1:-}" in
 	core) cmd_core ;;
 	secrets) cmd_secrets ;;
 	images) cmd_images ;;
 	apps) cmd_apps ;;
+	seed) cmd_seed ;;
 	all) cmd_core; cmd_secrets; cmd_images; cmd_apps ;;
 	*) sed -n '2,16p' "$0"; exit 2 ;;
 esac
