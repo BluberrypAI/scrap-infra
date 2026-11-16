@@ -45,6 +45,7 @@ services:
       retries: 20
 
   server:
+    image: ${COMPOSE_PROJECT_NAME:-scrap}-server
     build: ${SERVER_DIR:-../scrap-server}/backend
     environment:
       # local이어야 개발용 로그인(/auth/dev-login)이 열린다
@@ -86,6 +87,8 @@ services:
   #   docker compose run --rm server-seed
   # 전국 명부까지 넣으려면 README의 "처리 경로 데이터" 참고
   server-seed:
+    # 서버를 재빌드하면 적재 작업도 같은 최신 코드·자료를 사용한다.
+    image: ${COMPOSE_PROJECT_NAME:-scrap}-server
     build: ${SERVER_DIR:-../scrap-server}/backend
     profiles: ["seed"]
     environment:
