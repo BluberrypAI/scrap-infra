@@ -326,7 +326,8 @@ module diagnosis 'modules/webapp.bicep' = if (deployApps) {
     port: 8030
     healthPath: '/health'
     allowSubnetId: appsSubnetId
-    startupCommand: 'sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8030"'
+    // 시작 명령은 두지 않음: App Service가 따옴표를 풀지 않고 넘겨 sh가 문법 오류로 꺼짐
+    // 엔진 DB 마이그레이션은 deploy.sh seed가 DB VM에서 실행함
     appSettings: {
       APP_ENV: 'prod'
       DATABASE_URL: kvRef(kv.name, 'diagnosis-database-url')
