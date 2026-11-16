@@ -64,6 +64,9 @@ services:
       MICROSOFT_TENANT: ${MICROSOFT_TENANT:-common}
       # 문진 엔진. 토큰은 diagnosis와 같은 값
       DIAGNOSIS_ENGINE_URL: http://diagnosis:8030
+      # 모델 60초 × 추출/응답 각 최대 2회(최대 240초) + 규칙·DB 여유.
+      # diagnosis의 SDK 중첩 재시도 제거 버전과 함께 사용한다.
+      DIAGNOSIS_ENGINE_TIMEOUT_SECONDS: ${DIAGNOSIS_ENGINE_TIMEOUT_SECONDS:-300}
       ENGINE_SERVICE_TOKEN: ${ENGINE_SERVICE_TOKEN:-local-engine-token}
       # 처리 경로 업체 검토·웹 조사. 토큰은 route와 같은 값
       AI_BASE_URL: http://route:8000
@@ -79,7 +82,7 @@ services:
       server-db:
         condition: service_healthy
       diagnosis:
-        condition: service_started
+        condition: service_healthy
       route:
         condition: service_started
 
@@ -123,11 +126,18 @@ services:
       ENGINE_SERVICE_TOKEN: ${ENGINE_SERVICE_TOKEN:-local-engine-token}
       # 비우면(off) AI 없이 선택지 버튼으로만 답한다
       LLM_PROVIDER: ${DIAGNOSIS_LLM_PROVIDER:-azure}
+      LLM_TIMEOUT_SECONDS: ${DIAGNOSIS_LLM_TIMEOUT_SECONDS:-60}
       AZURE_OPENAI_ENDPOINT: ${DIAGNOSIS_AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${DIAGNOSIS_AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_DEPLOYMENT: ${DIAGNOSIS_AZURE_OPENAI_DEPLOYMENT:-}
       AZURE_OPENAI_API_VERSION: ${DIAGNOSIS_AZURE_OPENAI_API_VERSION:-2024-10-21}
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8030"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8030/health', timeout=5)\""]
+      interval: 5s
+      timeout: 6s
+      retries: 20
+      start_period: 30s
     ports:
       # 확인용(API 문서 /docs). server는 내부망 주소를 쓴다
       - "${DIAGNOSIS_PORT:-8030}:8030"

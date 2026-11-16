@@ -52,12 +52,18 @@ docker compose run --rm server-seed   # 처음 한 번: 처리 경로 공정 참
 | `VITE_MAPBOX_ACCESS_TOKEN` | 처리 경로 지도가 안 나옴 (목록은 보임) |
 | `GOOGLE_*`, `MICROSOFT_*` | 소셜 로그인 불가. 개발용 로그인은 가능 |
 
+문진 모델의 응답을 기다리다가 server가 먼저 끊지 않도록 `DIAGNOSIS_LLM_TIMEOUT_SECONDS=60`, `DIAGNOSIS_ENGINE_TIMEOUT_SECONDS=300`을 기본으로 연결한다. **scrap-diagnosis의 SDK 중첩 재시도 제거 버전과 함께 사용한다.** 추출·응답 각 최대 2회에 60초를 적용한 대기 예산 240초에 규칙·DB 처리 여유를 둔 값이다. 모델 대기를 늘리면 서버 대기도 맞춰야 한다. 웹 nginx의 대기 기본값은 600초다. 실제 평균 응답시간이나 대규모 동시 부하를 보장하는 수치는 아니다.
+
+server는 diagnosis의 `/health`가 성공한 후 시작한다. 규칙 로드·DB 준비가 끝나기 전에 첫 문진을 보내는 시작 순서 문제를 줄인다.
+
+2026-11-17에 실제 확인한 코드 조합과 범위는 [로컬 로그인·PP E2E 검증](docs/local-e2e-20261117.md)에 정리했다.
+
 ### 자주 쓰는 명령
 
 ```bash
 docker compose ps                        # 상태
 docker compose logs -f server            # 로그
-docker compose up -d --build web         # 한 서비스만 다시 빌드
+docker compose up -d --build --no-deps web # 실행 중인 의존 서비스를 유지하고 web만 다시 빌드
 docker compose down                      # 중지 (데이터 유지)
 docker compose down -v                   # 중지 + DB 데이터 삭제
 ```
