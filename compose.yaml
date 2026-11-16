@@ -70,6 +70,7 @@ services:
       ENGINE_SERVICE_TOKEN: ${ENGINE_SERVICE_TOKEN:-local-engine-token}
       # 처리 경로 업체 검토·웹 조사. 토큰은 route와 같은 값
       AI_BASE_URL: http://route:8000
+      KAKAO_MOBILITY_REST_API_KEY: ${KAKAO_MOBILITY_REST_API_KEY:-}
       SCRAP_INTAKE_SERVICE_TOKEN: ${SCRAP_INTAKE_SERVICE_TOKEN:-local-intake-token}
     ports:
       - "${SERVER_PORT:-8000}:8000"

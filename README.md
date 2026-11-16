@@ -49,7 +49,8 @@ docker compose run --rm server-seed   # 처음 한 번: 처리 경로 공정 참
 | `ENGINE_SERVICE_TOKEN`, `SCRAP_INTAKE_SERVICE_TOKEN` | 로컬 기본값으로 동작. 영문·숫자만 사용 (한글이 섞이면 server 요청이 500) |
 | `DIAGNOSIS_AZURE_OPENAI_*` | 문진이 자유 문장을 못 알아듣고 선택지 버튼으로만 진행 (`DIAGNOSIS_LLM_PROVIDER=off`와 같음) |
 | `ROUTE_AZURE_OPENAI_*` | 처리 경로의 업체 검토·웹 조사가 "미완료"로 남아 인수 요청을 보낼 수 없음 |
-| `VITE_MAPBOX_ACCESS_TOKEN` | 처리 경로 지도가 안 나옴 (목록은 보임) |
+| `VITE_MAPBOX_ACCESS_TOKEN` | 최신 web의 업체 지도는 MapLibre·OpenStreetMap 대체 표시 사용. 길찾기 키와 별개 |
+| `KAKAO_MOBILITY_REST_API_KEY` | 도로거리 조회를 하지 않으며 직선거리·도로거리 미확인으로 표시 |
 | `GOOGLE_*`, `MICROSOFT_*` | 소셜 로그인 불가. 개발용 로그인은 가능 |
 
 문진 모델의 응답을 기다리다가 server가 먼저 끊지 않도록 `DIAGNOSIS_LLM_TIMEOUT_SECONDS=60`, `DIAGNOSIS_ENGINE_TIMEOUT_SECONDS=300`을 기본으로 연결한다. **scrap-diagnosis의 SDK 중첩 재시도 제거 버전과 함께 사용한다.** 추출·응답 각 최대 2회에 60초를 적용한 대기 예산 240초에 규칙·DB 처리 여유를 둔 값이다. 모델 대기를 늘리면 서버 대기도 맞춰야 한다. 웹 nginx의 대기 기본값은 600초다. 실제 평균 응답시간이나 대규모 동시 부하를 보장하는 수치는 아니다.
@@ -68,7 +69,15 @@ docker compose down                      # 중지 (데이터 유지)
 docker compose down -v                   # 중지 + DB 데이터 삭제
 ```
 
-### 처리 경로 데이터
+### 선택: 도로거리로 업체 비교
+
+`.env`의 `KAKAO_MOBILITY_REST_API_KEY`에 자동차 길찾기가 활성화된 카카오모빌리티 REST API 키를 넣고 `docker compose up -d --force-recreate --no-deps server`를 실행한다. 키는 서버만 사용한다. 기존 물량은 **다시 검토**해서 저장된 거리도 갱신한다.
+
+현재 보유 기업 좌표에서 모든 후보 업체 좌표까지 조회한다. 도로거리가 확인된 업체끼리 가까운 최대 5곳을 지도에 표시하고, 미확인 업체도 목록과 AI 검토에 남긴다. 전부 조회되지 않으면 직선거리로 명확히 표시한다. 지도 표시 키와 길찾기 키는 별개다. 기본 자동차 경로이므로 화물차 통행 제한·운송 견적을 대신하지 않는다.
+
+2026-11-17 로컬에는 유효한 길찾기 키가 없어 카카오 실제 거리값은 아직 검증하지 않았다. 연결 규격·정렬·오류 처리는 모의 응답 테스트로 확인했다.
+
+### 공정·명부 적재
 
 `server-seed`는 실행할 때마다 공정 참조 데이터를 **갈아끼움**. 전국 명부까지 넣으려면 명부 JSON을 `data/`(또는 `REGISTRY_DIR`)에 두고 함께 넣음.
 
