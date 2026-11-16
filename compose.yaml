@@ -1,0 +1,151 @@
+# SCRAP 전체 서비스 로컬 통합 실행 (빌드 이미지 기준, 배포 구성의 기준)
+#
+#   cp .env.example .env   # 값 채우기
+#   docker compose up -d --build
+#   브라우저: http://localhost:5178
+#
+# 각 서비스 레포는 이 레포 옆 폴더에 둔다. 경로는 .env의 *_DIR로 바꿀 수 있다.
+# 브라우저는 web(5178)만 연다. web → server → (diagnosis, route) 순서로 부르고,
+# diagnosis·route·DB는 내부망으로만 통신한다. 확인용으로 server(8000)와 각 서비스 문서 포트만 연다.
+#
+# 넣지 않은 것: scrap-route의 Neo4j·pgvector(지식그래프 /kg/*, 법령 검색 /rag/*).
+# 지금 server가 부르는 scrap-route API(/treatment/intake-reviews, /treatment/facility-web-search)는 둘 다 쓰지 않는다.
+
+name: scrap
+
+services:
+  # ---- 화면 (scrap-web) ----
+  web:
+    build:
+      context: ${WEB_DIR:-../scrap-web}
+      args:
+        # Vite는 빌드할 때 값을 넣는다. 바꾸면 --build로 다시 빌드
+        VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
+        VITE_ENABLE_DEV_LOGIN: ${VITE_ENABLE_DEV_LOGIN:-false}
+    environment:
+      SCRAP_SERVER_URL: http://server:8000
+    ports:
+      - "${WEB_PORT:-5178}:80"
+    depends_on:
+      server:
+        condition: service_healthy
+
+  # ---- API (scrap-server) ----
+  server-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: resource
+      POSTGRES_PASSWORD: resource
+      POSTGRES_DB: resource
+    volumes:
+      - server-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resource"]
+      interval: 3s
+      retries: 20
+
+  server:
+    image: ${COMPOSE_PROJECT_NAME:-scrap}-server
+    build: ${SERVER_DIR:-../scrap-server}/backend
+    environment:
+      # local이어야 개발용 로그인(/auth/dev-login)이 열린다
+      APP_ENV: ${SERVER_APP_ENV:-local}
+      DATABASE_URL: postgresql+asyncpg://resource:resource@server-db:5432/resource
+      JWT_SECRET: ${JWT_SECRET:-local-jwt-secret-change-me}
+      SESSION_SECRET: ${SESSION_SECRET:-local-session-secret-change-me}
+      # 소셜 로그인 콜백은 {BACKEND_URL}/api/v1/auth/{provider}/callback. 쿠키는 포트를 가리지 않아 localhost면 web과 공유된다
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5178}
+      CORS_ORIGINS: '["${FRONTEND_URL:-http://localhost:5178}"]'
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT: ${MICROSOFT_TENANT:-common}
+      # 문진 엔진. 토큰은 diagnosis와 같은 값
+      DIAGNOSIS_ENGINE_URL: http://diagnosis:8030
+      ENGINE_SERVICE_TOKEN: ${ENGINE_SERVICE_TOKEN:-local-engine-token}
+      # 처리 경로 업체 검토·웹 조사. 토큰은 route와 같은 값
+      AI_BASE_URL: http://route:8000
+      SCRAP_INTAKE_SERVICE_TOKEN: ${SCRAP_INTAKE_SERVICE_TOKEN:-local-intake-token}
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 5s
+      retries: 30
+      start_period: 20s
+    depends_on:
+      server-db:
+        condition: service_healthy
+      diagnosis:
+        condition: service_started
+      route:
+        condition: service_started
+
+  # 처음 한 번: 처리 경로 공정 참조 데이터 적재 (실행할 때마다 갈아끼움)
+  #   docker compose run --rm server-seed
+  # 전국 명부까지 넣으려면 README의 "처리 경로 데이터" 참고
+  server-seed:
+    # 서버를 재빌드하면 적재 작업도 같은 최신 코드·자료를 사용한다.
+    image: ${COMPOSE_PROJECT_NAME:-scrap}-server
+    build: ${SERVER_DIR:-../scrap-server}/backend
+    profiles: ["seed"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://resource:resource@server-db:5432/resource
+    volumes:
+      - ${REGISTRY_DIR:-./data}:/registry:ro
+    command: ["sh", "-c", "alembic upgrade head && python -m app.domains.treatment.import_catalog"]
+    depends_on:
+      server-db:
+        condition: service_healthy
+
+  # ---- 문진 엔진 (scrap-diagnosis) ----
+  diagnosis-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: wd
+      POSTGRES_PASSWORD: wd
+      POSTGRES_DB: scrap_engine
+    volumes:
+      - diagnosis-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wd -d scrap_engine"]
+      interval: 3s
+      retries: 20
+
+  diagnosis:
+    build: ${DIAGNOSIS_DIR:-../scrap-diagnosis}
+    environment:
+      APP_ENV: ${DIAGNOSIS_APP_ENV:-dev}
+      DATABASE_URL: postgresql+psycopg://wd:wd@diagnosis-db:5432/scrap_engine
+      DB_CREATE_ALL: "false"
+      ENGINE_SERVICE_TOKEN: ${ENGINE_SERVICE_TOKEN:-local-engine-token}
+      # 비우면(off) AI 없이 선택지 버튼으로만 답한다
+      LLM_PROVIDER: ${DIAGNOSIS_LLM_PROVIDER:-azure}
+      AZURE_OPENAI_ENDPOINT: ${DIAGNOSIS_AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${DIAGNOSIS_AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${DIAGNOSIS_AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${DIAGNOSIS_AZURE_OPENAI_API_VERSION:-2024-10-21}
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8030"]
+    ports:
+      # 확인용(API 문서 /docs). server는 내부망 주소를 쓴다
+      - "${DIAGNOSIS_PORT:-8030}:8030"
+    depends_on:
+      diagnosis-db:
+        condition: service_healthy
+
+  # ---- 처리 경로 AI (scrap-route) ----
+  route:
+    build: ${ROUTE_DIR:-../scrap-route}
+    environment:
+      SCRAP_INTAKE_SERVICE_TOKEN: ${SCRAP_INTAKE_SERVICE_TOKEN:-local-intake-token}
+      AZURE_OPENAI_ENDPOINT: ${ROUTE_AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_DEPLOYMENT: ${ROUTE_AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_KEY: ${ROUTE_AZURE_OPENAI_API_KEY:-}
+    ports:
+      - "${ROUTE_PORT:-8010}:8000"
+
+volumes:
+  server-pgdata:
+  diagnosis-pgdata:

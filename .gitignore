@@ -6,9 +6,14 @@
 # Bicep / Azure 빌드 결과
 *.json.bak
 bicep-out/
+# deploy/azure/deploy.sh가 남기는 이미지 태그·임시 비밀번호
+.azure-state/
 
 # OS / IDE
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# 전국 명부 등 로컬 데이터 파일 (server-seed가 /registry로 읽음)
+data/

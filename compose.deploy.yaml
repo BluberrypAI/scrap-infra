@@ -1,0 +1,69 @@
+# 단일 VM 시험 배포용 덮어쓰기 (compose.yaml 위에 겹쳐 씀)
+#
+#   .env에 COMPOSE_FILE=compose.yaml:compose.deploy.yaml 을 넣으면 docker compose 명령이 둘 다 읽는다
+#   절차는 docs/deploy-single-vm.md
+#
+# 바뀌는 것
+# - 바깥으로는 caddy(80·443)만 연다. web·server·diagnosis·route 포트는 닫고 내부망으로만 통신한다
+# - caddy가 HTTPS 인증서를 자동으로 받고, 사이트 전체에 팀 전용 비밀번호(Basic 인증)를 건다
+# - 개발용 로그인을 켠다(APP_ENV=local, VITE_ENABLE_DEV_LOGIN=true).
+#   이메일만 넣으면 그 계정으로 들어가지므로 caddy 비밀번호 없이 공개하면 안 된다
+# - VM 재부팅 후 자동으로 다시 뜬다(restart: unless-stopped)
+
+services:
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS를 .env에 넣어 주세요 (예 scrap-test.koreacentral.cloudapp.azure.com)}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?BASIC_AUTH_USER를 .env에 넣어 주세요}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?BASIC_AUTH_HASH를 .env에 넣어 주세요 (docs/deploy-single-vm.md 참고)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # 인증서를 보관한다. 지우면 다시 발급받는다
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+
+  web:
+    restart: unless-stopped
+    build:
+      args:
+        VITE_ENABLE_DEV_LOGIN: "true"
+    ports: !reset []
+
+  server:
+    restart: unless-stopped
+    environment:
+      APP_ENV: local
+      # Swagger(/docs)는 caddy 비밀번호 뒤에 있어도 닫아 둔다
+      DOCS_ENABLED: "false"
+      BACKEND_URL: https://${SITE_ADDRESS}
+      FRONTEND_URL: https://${SITE_ADDRESS}
+      CORS_ORIGINS: '["https://${SITE_ADDRESS}"]'
+      # HTTPS로만 쓰므로 로그인 쿠키에 Secure를 붙인다
+      COOKIE_SECURE: "true"
+    ports: !reset []
+
+  server-db:
+    restart: unless-stopped
+
+  diagnosis:
+    restart: unless-stopped
+    ports: !reset []
+
+  diagnosis-db:
+    restart: unless-stopped
+
+  route:
+    restart: unless-stopped
+    ports: !reset []
+
+volumes:
+  caddy-data:
+  caddy-config:
