@@ -22,6 +22,11 @@ ROOT="$(cd "$INFRA/.." && pwd)"
 # 부트캠프 구독은 리소스 그룹을 새로 만들 수 없어 받은 그룹을 씀
 RG="${RG:-TEAM_AIBIC2026_01_RG_EUS2}"
 BRANCH="${BRANCH:-main}"
+# DB VM 관리용 SSH 공개 키 (VM에 공용 IP가 없어 평소에는 az vm run-command로 관리)
+DB_SSH_KEY="${DB_SSH_KEY:-$HOME/.ssh/scrap_key.pub}"
+# DB VM의 고정 사설 IP와 관리자 (azure/main.bicep과 같은 값)
+DB_HOST=10.0.2.4
+DB_USER=scrapadmin
 # App Service가 따라가는 태그. 이 태그로 push하면 웹훅으로 다시 배포됨
 DEPLOY_TAG=main
 STATE="$INFRA/.azure-state"   # 처음 만든 DB 비밀번호를 Key Vault로 옮기기 전 잠깐 둠 (git 제외)
@@ -36,8 +41,9 @@ envval() {
 	grep -E "^$1=" "$INFRA/.env" | tail -1 | cut -d= -f2- | tr -d '\r' | sed -E "s/^['\"]|['\"]$//g"
 }
 
-kv_name() { az keyvault list -g "$RG" --query "[0].name" -o tsv 2>/dev/null; }
-acr_name() { az acr list -g "$RG" --query "[0].name" -o tsv 2>/dev/null; }
+# 리소스 그룹에 다른 팀원 리소스도 있으므로 이 구성이 만든 이름만 고름
+kv_name() { az keyvault list -g "$RG" --query "[?starts_with(name,'kv-scrap-')].name | [0]" -o tsv 2>/dev/null; }
+acr_name() { az acr list -g "$RG" --query "[?starts_with(name,'crscrap')].name | [0]" -o tsv 2>/dev/null; }
 
 kv_has() { az keyvault secret show --vault-name "$1" -n "$2" --query id -o tsv >/dev/null 2>&1; }
 
@@ -74,9 +80,11 @@ common_params() {
 	local deployer apiver
 	deployer=$(az ad signed-in-user show --query id -o tsv)
 	apiver=$(envval DIAGNOSIS_AZURE_OPENAI_API_VERSION)
+	[ -f "$DB_SSH_KEY" ] || die "DB VM용 SSH 공개 키가 없음: $DB_SSH_KEY (DB_SSH_KEY로 지정)"
 	PARAMS=(
 		deployerObjectId="$deployer"
 		postgresAdminPassword="$(pg_password)"
+		dbVmSshPublicKey="$(cat "$DB_SSH_KEY")"
 		diagnosisOpenAiEndpoint="$(envval DIAGNOSIS_AZURE_OPENAI_ENDPOINT)"
 		diagnosisOpenAiDeployment="$(envval DIAGNOSIS_AZURE_OPENAI_DEPLOYMENT)"
 		diagnosisOpenAiApiVersion="${apiver:-2024-10-21}"
@@ -116,8 +124,8 @@ cmd_secrets() {
 	need az; need openssl
 	local vault host user pw
 	vault=$(kv_name); [ -n "$vault" ] || die "Key Vault가 없음. core를 먼저 실행"
-	host=$(az postgres flexible-server list -g "$RG" --query "[0].fullyQualifiedDomainName" -o tsv)
-	user=$(az postgres flexible-server list -g "$RG" --query "[0].administratorLogin" -o tsv)
+	host=$DB_HOST
+	user=$DB_USER
 	pw=$(kv_get "$vault" postgres-admin-password)
 	echo "== Key Vault $vault"
 
@@ -130,7 +138,7 @@ cmd_secrets() {
 	done
 	# DB 주소는 비밀번호가 바뀌어도 맞도록 항상 다시 씀
 	kv_set "$vault" server-database-url "postgresql+asyncpg://$user:$pw@$host:5432/scrap_server"
-	kv_set "$vault" diagnosis-database-url "postgresql+psycopg://$user:$pw@$host:5432/scrap_engine?sslmode=require"
+	kv_set "$vault" diagnosis-database-url "postgresql+psycopg://$user:$pw@$host:5432/scrap_engine"
 
 	local key
 	key=$(envval DIAGNOSIS_AZURE_OPENAI_API_KEY)
