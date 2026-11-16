@@ -13,8 +13,8 @@
 
 targetScope = 'resourceGroup'
 
-// 부트캠프 구독은 East US 2만 쓸 수 있음 (Korea Central은 PostgreSQL 생성이 SkuNotAvailable로 거절됨)
-param location string = 'eastus2'
+// 부트캠프 구독 제한: App Service 할당량이 Korea Central에만 있고, 관리형 PostgreSQL은 어느 지역에서도 만들 수 없음
+param location string = 'koreacentral'
 param prefix string = 'scrap'
 param deployApps bool = false
 @description('App Service가 따라가는 이미지 태그. 이 태그로 push하면 다시 배포됨')
@@ -23,11 +23,14 @@ param imageTag string = 'main'
 @description('Key Vault에 비밀값을 넣는 사람의 Entra 개체 ID (az ad signed-in-user show --query id)')
 param deployerObjectId string
 
+// 부트캠프 구독은 관리형 PostgreSQL(Flexible Server)을 만들 수 없어(SkuNotAvailable) VNet 안의 VM에서 Docker로 띄움
 @secure()
 param postgresAdminPassword string
 param postgresAdminUser string = 'scrapadmin'
-param postgresVersion string = '17'
-param postgresSku string = 'Standard_B2s'
+param postgresImage string = 'postgres:17'
+param dbVmSize string = 'Standard_B2s'
+@description('DB VM 관리용 SSH 공개 키. 공용 IP가 없어 평소에는 az vm run-command로 관리함')
+param dbVmSshPublicKey string
 param appServiceSku string = 'B2'
 
 @description('직접 산 도메인. 비우면 Front Door 기본 주소를 씀')
@@ -48,7 +51,8 @@ param wafRateLimitPerMinute int = 1000
 @description('경고 메일 받을 주소. 비우면 경고를 만들지 않음')
 param alertEmail string = ''
 
-var suffix = take(uniqueString(resourceGroup().id), 6)
+// 지역을 바꾸면 이름도 바뀌게 함 (지운 Key Vault·PostgreSQL 이름은 한동안 다시 쓸 수 없음)
+var suffix = take(uniqueString(resourceGroup().id, location), 6)
 // App Service 이름은 전 세계에서 하나여야 해서 뒤에 고유 문자열을 붙임
 var appNames = {
   web: '${prefix}-web-${suffix}'
@@ -79,6 +83,60 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 }
 
 // ---------- 네트워크 ----------
+// 새 VNet은 기본 인터넷 출구가 없어 NAT 게이트웨이로 나감 (앱의 Azure OpenAI 호출, DB VM의 이미지 받기)
+resource natIp 'Microsoft.Network/publicIPAddresses@2024-01-01' = {
+  name: 'pip-${prefix}-nat'
+  location: location
+  sku: { name: 'Standard' }
+  properties: { publicIPAllocationMethod: 'Static' }
+}
+
+resource nat 'Microsoft.Network/natGateways@2024-01-01' = {
+  name: 'nat-${prefix}'
+  location: location
+  sku: { name: 'Standard' }
+  properties: {
+    publicIpAddresses: [{ id: natIp.id }]
+    idleTimeoutInMinutes: 10
+  }
+}
+
+// DB는 앱 서브넷에서 오는 5432만 받음
+resource dbNsg 'Microsoft.Network/networkSecurityGroups@2024-01-01' = {
+  name: 'nsg-${prefix}-db'
+  location: location
+  properties: {
+    securityRules: [
+      {
+        name: 'allow-apps-postgres'
+        properties: {
+          priority: 100
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: '10.0.0.0/24'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '5432'
+        }
+      }
+      {
+        name: 'deny-other-vnet'
+        properties: {
+          priority: 200
+          direction: 'Inbound'
+          access: 'Deny'
+          protocol: '*'
+          sourceAddressPrefix: 'VirtualNetwork'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+    ]
+  }
+}
+
 resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
   name: 'vnet-${prefix}'
   location: location
@@ -92,13 +150,15 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
           addressPrefix: '10.0.0.0/24'
           delegations: [{ name: 'appservice', properties: { serviceName: 'Microsoft.Web/serverFarms' } }]
           serviceEndpoints: [{ service: 'Microsoft.Web' }]
+          natGateway: { id: nat.id }
         }
       }
       {
         name: 'snet-db'
         properties: {
           addressPrefix: '10.0.2.0/24'
-          delegations: [{ name: 'pg', properties: { serviceName: 'Microsoft.DBforPostgreSQL/flexibleServers' } }]
+          networkSecurityGroup: { id: dbNsg.id }
+          natGateway: { id: nat.id }
         }
       }
     ]
@@ -107,62 +167,83 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
 
 var appsSubnetId = vnet.properties.subnets[0].id
 
-// ---------- PostgreSQL ----------
-var pgName = 'psql-${prefix}-${suffix}'
+// ---------- PostgreSQL (DB VM) ----------
+var dbHost = '10.0.2.4'
 
-resource pgDns 'Microsoft.Network/privateDnsZones@2020-06-01' = {
-  name: '${pgName}.private.postgres.database.azure.com'
-  location: 'global'
-}
+// 처음 부팅할 때 Docker를 설치하고 PostgreSQL을 띄움. scrap_server는 POSTGRES_DB로, scrap_engine은 초기화 SQL로 만듦
+var dbCloudInit = '''
+#cloud-config
+package_update: true
+packages: [docker.io]
+write_files:
+  - path: /opt/scrap-db/init/01-databases.sql
+    content: |
+      CREATE DATABASE scrap_engine;
+  - path: /opt/scrap-db/env
+    permissions: '0600'
+    content: |
+      POSTGRES_USER=__USER__
+      POSTGRES_PASSWORD=__PASSWORD__
+      POSTGRES_DB=scrap_server
+runcmd:
+  - systemctl enable --now docker
+  - docker run -d --name postgres --restart unless-stopped -p 5432:5432 --env-file /opt/scrap-db/env -v /opt/scrap-db/init:/docker-entrypoint-initdb.d:ro -v pgdata:/var/lib/postgresql/data __IMAGE__
+'''
 
-resource pgDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
-  parent: pgDns
-  name: 'vnet-${prefix}'
-  location: 'global'
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: vnet.id }
-  }
-}
-
-resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
-  name: pgName
+resource dbNic 'Microsoft.Network/networkInterfaces@2024-01-01' = {
+  name: 'nic-${prefix}-db'
   location: location
-  sku: { name: postgresSku, tier: 'Burstable' }
   properties: {
-    version: postgresVersion
-    administratorLogin: postgresAdminUser
-    administratorLoginPassword: postgresAdminPassword
-    storage: { storageSizeGB: 32 }
-    backup: { backupRetentionDays: 7, geoRedundantBackup: 'Disabled' }
-    highAvailability: { mode: 'Disabled' }
-    network: {
-      delegatedSubnetResourceId: vnet.properties.subnets[1].id
-      privateDnsZoneArmResourceId: pgDns.id
-      publicNetworkAccess: 'Disabled'
-    }
+    ipConfigurations: [
+      {
+        name: 'ipconfig'
+        properties: {
+          subnet: { id: vnet.properties.subnets[1].id }
+          privateIPAllocationMethod: 'Static'
+          privateIPAddress: dbHost
+        }
+      }
+    ]
   }
-  dependsOn: [pgDnsLink]
 }
 
-resource dbServer 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
-  parent: pg
-  name: 'scrap_server'
-  properties: { charset: 'UTF8', collation: 'en_US.utf8' }
-}
-
-resource dbEngine 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
-  parent: pg
-  name: 'scrap_engine'
-  properties: { charset: 'UTF8', collation: 'en_US.utf8' }
-  dependsOn: [dbServer]
+resource dbVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
+  name: 'vm-${prefix}-db'
+  location: location
+  properties: {
+    hardwareProfile: { vmSize: dbVmSize }
+    osProfile: {
+      computerName: 'scrap-db'
+      adminUsername: 'azureuser'
+      customData: base64(replace(replace(replace(dbCloudInit, '__USER__', postgresAdminUser), '__PASSWORD__', postgresAdminPassword), '__IMAGE__', postgresImage))
+      linuxConfiguration: {
+        disablePasswordAuthentication: true
+        ssh: { publicKeys: [{ path: '/home/azureuser/.ssh/authorized_keys', keyData: dbVmSshPublicKey }] }
+      }
+    }
+    storageProfile: {
+      imageReference: {
+        publisher: 'Canonical'
+        offer: 'ubuntu-24_04-lts'
+        sku: 'server'
+        version: 'latest'
+      }
+      osDisk: {
+        createOption: 'FromImage'
+        diskSizeGB: 64
+        managedDisk: { storageAccountType: 'StandardSSD_LRS' }
+      }
+    }
+    networkProfile: { networkInterfaces: [{ id: dbNic.id }] }
+  }
 }
 
 // ---------- 이미지 저장소 ----------
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: 'cr${prefix}${suffix}'
   location: location
-  sku: { name: 'Basic' }
+  // Basic은 웹훅이 2개까지라 앱 4개의 배포 웹훅을 만들 수 없음
+  sku: { name: 'Standard' }
   properties: { adminUserEnabled: true }
 }
 
@@ -258,7 +339,7 @@ module diagnosis 'modules/webapp.bicep' = if (deployApps) {
       AZURE_OPENAI_API_KEY: kvRef(kv.name, 'diagnosis-openai-key')
     }
   }
-  dependsOn: [dbEngine]
+  dependsOn: [dbVm]
 }
 
 module route 'modules/webapp.bicep' = if (deployApps) {
@@ -303,12 +384,14 @@ module server 'modules/webapp.bicep' = if (deployApps) {
       APP_ENV: 'prod'
       DOCS_ENABLED: 'false'
       DATABASE_URL: kvRef(kv.name, 'server-database-url')
-      DB_SSL: 'require'
+      // DB VM은 VNet 안에서만 접속하고 TLS를 쓰지 않음
+      DB_SSL: 'disable'
       JWT_SECRET: kvRef(kv.name, 'jwt-secret')
       SESSION_SECRET: kvRef(kv.name, 'session-secret')
       BACKEND_URL: publicUrl
       FRONTEND_URL: publicUrl
-      CORS_ORIGINS: '["${publicUrl}"]'
+      // 화면이 nginx를 거쳐 같은 주소로 API를 부르므로 CORS 설정은 두지 않음
+      // ('['로 시작하는 값은 배포 엔진이 수식으로 해석해 깨짐)
       COOKIE_SECURE: 'true'
       GOOGLE_CLIENT_ID: googleClientId
       GOOGLE_CLIENT_SECRET: kvRef(kv.name, 'google-client-secret')
@@ -321,7 +404,7 @@ module server 'modules/webapp.bicep' = if (deployApps) {
       SCRAP_INTAKE_SERVICE_TOKEN: kvRef(kv.name, 'intake-service-token')
     }
   }
-  dependsOn: [dbServer]
+  dependsOn: [dbVm]
 }
 
 module web 'modules/webapp.bicep' = if (deployApps) {
@@ -352,6 +435,8 @@ var cd = {
   route: 'scrap-route'
 }
 
+// 같은 ACR에 웹훅을 동시에 만들면 충돌하므로 하나씩 만듦
+@batchSize(1)
 resource hooks 'Microsoft.ContainerRegistry/registries/webhooks@2023-07-01' = [for k in items(cd): if (deployApps) {
   parent: acr
   name: 'cd${k.key}'
@@ -502,7 +587,7 @@ resource pgCpuAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(al
   properties: {
     severity: 2
     enabled: true
-    scopes: [pg.id]
+    scopes: [dbVm.id]
     evaluationFrequency: 'PT5M'
     windowSize: 'PT15M'
     criteria: {
@@ -511,7 +596,7 @@ resource pgCpuAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(al
         {
           name: 'cpu'
           criterionType: 'StaticThresholdCriterion'
-          metricName: 'cpu_percent'
+          metricName: 'Percentage CPU'
           operator: 'GreaterThan'
           threshold: 80
           timeAggregation: 'Average'
@@ -552,7 +637,7 @@ resource server5xxAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deplo
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output keyVaultName string = kv.name
-output postgresHost string = pg.properties.fullyQualifiedDomainName
+output postgresHost string = dbHost
 output postgresAdminUser string = postgresAdminUser
 output publicUrl string = deployApps ? publicUrl : ''
 output frontDoorHost string = deployApps ? fdEndpoint.properties.hostName : ''
