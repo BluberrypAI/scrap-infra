@@ -77,8 +77,24 @@ pg_password() {
 	fi
 }
 
+# 이미 배포된 server 앱 설정 값 하나 (환경 변수로 넘기지 않은 값은 지금 값을 그대로 씀)
+current_setting() {
+	local app
+	app=$(az webapp list -g "$RG" --query "[?starts_with(name,'scrap-server-')].name | [0]" -o tsv 2>/dev/null)
+	[ -n "$app" ] || return 0
+	az webapp config appsettings list -g "$RG" -n "$app" --query "[?name=='$1'].value | [0]" -o tsv 2>/dev/null
+}
+
 common_params() {
 	local deployer apiver
+	# 소셜 로그인·도메인 값은 넘기지 않으면 지금 배포된 값을 유지함 (빈 값으로 덮어쓰지 않게)
+	: "${GOOGLE_CLIENT_ID:=$(current_setting GOOGLE_CLIENT_ID)}"
+	: "${MICROSOFT_CLIENT_ID:=$(current_setting MICROSOFT_CLIENT_ID)}"
+	: "${MICROSOFT_TENANT:=$(current_setting MICROSOFT_TENANT)}"
+	if [ -z "${CUSTOM_HOST:-}" ]; then
+		local url; url=$(current_setting FRONTEND_URL)
+		case "$url" in *azurefd.net*|"") ;; *) CUSTOM_HOST=${url#https://} ;; esac
+	fi
 	deployer=$(az ad signed-in-user show --query id -o tsv)
 	apiver=$(envval DIAGNOSIS_AZURE_OPENAI_API_VERSION)
 	[ -f "$DB_SSH_KEY" ] || die "DB VM용 SSH 공개 키가 없음: $DB_SSH_KEY (DB_SSH_KEY로 지정)"
