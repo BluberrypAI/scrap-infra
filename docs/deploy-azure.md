@@ -78,10 +78,14 @@ ALERT_EMAIL=<경고 받을 메일> deploy/azure/deploy.sh apps      # App Servic
 ## 3. 데이터 (처음 한 번, 참조 데이터가 바뀌면 다시)
 
 ```bash
-deploy/azure/deploy.sh seed     # 공정 참조 데이터 적재 (server 이미지가 ACR에 올라간 뒤)
+deploy/azure/deploy.sh seed     # 엔진 DB 마이그레이션 + 공정 참조 데이터 적재 (이미지가 ACR에 올라간 뒤)
 ```
 
-App Service 컨테이너에는 SSH로 들어갈 수 없어, DB VM에서 server 이미지(`:main`)를 한 번 실행해 적재함. 실행할 때마다 참조 데이터를 갈아끼움.
+DB VM에서 ACR 이미지(`:main`)를 한 번씩 실행함.
+- scrap-diagnosis: `alembic upgrade head` (엔진 DB). **diagnosis에 DB 변경이 들어간 main 배포 뒤에는 다시 실행해야 함**
+- scrap-server: 마이그레이션 후 공정 참조 데이터 적재. 실행할 때마다 참조 데이터를 갈아끼움 (server는 시작할 때도 마이그레이션을 실행함)
+
+App Service 컨테이너에는 SSH로 들어갈 수 없고, App Service 시작 명령은 따옴표를 풀지 않아 `sh -c "a && b"` 같은 명령이 문법 오류로 꺼짐. 그래서 diagnosis는 이미지 기본 명령(uvicorn)으로만 띄우고 마이그레이션은 여기서 실행함.
 
 ## 4. 도메인과 소셜 로그인
 

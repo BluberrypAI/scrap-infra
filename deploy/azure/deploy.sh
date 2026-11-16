@@ -186,22 +186,31 @@ cmd_apps() {
 	deploy_bicep true
 }
 
-# 공정 참조 데이터 적재. App Service 컨테이너에는 SSH로 들어갈 수 없어 DB VM에서 server 이미지를 한 번 실행함
-# 실행할 때마다 참조 데이터를 갈아끼움 (compose의 server-seed와 같음)
-cmd_seed() {
-	need az
-	local acr server acr_user acr_pw vault db_pw image
+# DB VM에서 ACR 이미지를 한 번 실행함. App Service 컨테이너에는 SSH로 들어갈 수 없고,
+# App Service 시작 명령은 따옴표를 풀지 않아 'a && b' 같은 명령을 쓸 수 없음
+run_on_db_vm() {
+	local image=$1 db=$2 cmd=$3
+	local acr server acr_user acr_pw vault db_pw
 	acr=$(acr_name); vault=$(kv_name)
 	[ -n "$acr" ] && [ -n "$vault" ] || die "ACR이나 Key Vault가 없음"
 	server=$(az acr show -n "$acr" --query loginServer -o tsv)
 	acr_user=$(az acr credential show -n "$acr" --query username -o tsv)
 	acr_pw=$(az acr credential show -n "$acr" --query "passwords[0].value" -o tsv)
 	db_pw=$(kv_get "$vault" postgres-admin-password)
-	image="$server/scrap-server:$DEPLOY_TAG"
-	echo "== 공정 참조 데이터 적재 ($image)"
 	az vm run-command invoke -g "$RG" -n vm-scrap-db --command-id RunShellScript --query "value[0].message" -o tsv \
-		--scripts "echo '$acr_pw' | docker login $server -u $acr_user --password-stdin >/dev/null && docker pull -q $image >/dev/null && docker run --rm --network host -e DATABASE_URL='postgresql+asyncpg://$DB_USER:$db_pw@127.0.0.1:5432/scrap_server' $image sh -c 'alembic upgrade head >/dev/null && python -m app.domains.treatment.import_catalog' ; docker logout $server >/dev/null" \
+		--scripts "echo '$acr_pw' | docker login $server -u $acr_user --password-stdin >/dev/null 2>&1 && docker pull -q $server/$image:$DEPLOY_TAG >/dev/null && docker run --rm --network host -e DATABASE_URL='${db//PASSWORD/$db_pw}' $server/$image:$DEPLOY_TAG sh -c '$cmd' 2>&1 | tail -5; docker logout $server >/dev/null" \
 		| grep -vE "^\[std(out|err)\]$|^Enable succeeded" || true
+}
+
+# 엔진 DB 마이그레이션과 공정 참조 데이터 적재. 이미지가 main에 올라간 뒤 실행함
+# 참조 데이터는 실행할 때마다 갈아끼움 (compose의 server-seed와 같음)
+cmd_seed() {
+	need az
+	echo "== 엔진 DB 마이그레이션 (scrap-diagnosis)"
+	run_on_db_vm scrap-diagnosis "postgresql+psycopg://$DB_USER:PASSWORD@127.0.0.1:5432/scrap_engine" "alembic upgrade head"
+	echo "== 공정 참조 데이터 적재 (scrap-server)"
+	run_on_db_vm scrap-server "postgresql+asyncpg://$DB_USER:PASSWORD@127.0.0.1:5432/scrap_server" \
+		"alembic upgrade head >/dev/null && python -m app.domains.treatment.import_catalog"
 }
 
 case "${1:-}" in
