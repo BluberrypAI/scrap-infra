@@ -36,6 +36,7 @@
   az login --tenant soldeskms.onmicrosoft.com
   ```
 - `scrap-infra/.env`에 Azure OpenAI 값과 Mapbox 토큰 (로컬 실행용과 같은 값)
+- (선택) 시험성적서 스캔본·사진 OCR: `DIAGNOSIS_ALLOW_DOCUMENT_OCR=true`, `DIAGNOSIS_AZURE_DOCINTEL_ENDPOINT`, `DIAGNOSIS_AZURE_DOCINTEL_API_KEY`. 키는 `secrets` 단계에서 Key Vault `diagnosis-docintel-key`로 들어가고, 켜기·주소는 `core`/`apps` 단계 앱 설정으로 들어감. 문서 이미지가 Azure로 전송되고 쪽마다 과금
 - DB VM 관리용 SSH 공개 키 `~/.ssh/scrap_key.pub` (다른 키는 `DB_SSH_KEY=<경로>`)
 - 레포 다섯 개를 형제 폴더로 둠 (`scrap-web`, `scrap-server`, `scrap-diagnosis`, `scrap-route`, `scrap-infra`)
 

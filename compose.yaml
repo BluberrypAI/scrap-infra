@@ -133,6 +133,11 @@ services:
       AZURE_OPENAI_API_KEY: ${DIAGNOSIS_AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_DEPLOYMENT: ${DIAGNOSIS_AZURE_OPENAI_DEPLOYMENT:-}
       AZURE_OPENAI_API_VERSION: ${DIAGNOSIS_AZURE_OPENAI_API_VERSION:-2024-10-21}
+      # 시험성적서 스캔본·사진 읽기(Azure Document Intelligence). 기본 꺼짐
+      # 켜면 문서 이미지가 Azure로 전송되고 쪽마다 과금된다. 글자 있는 PDF는 켜지 않아도 엔진 안에서 읽는다
+      ALLOW_DOCUMENT_OCR: ${DIAGNOSIS_ALLOW_DOCUMENT_OCR:-false}
+      AZURE_DOCINTEL_ENDPOINT: ${DIAGNOSIS_AZURE_DOCINTEL_ENDPOINT:-}
+      AZURE_DOCINTEL_API_KEY: ${DIAGNOSIS_AZURE_DOCINTEL_API_KEY:-}
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8030"]
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8030/health', timeout=5)\""]

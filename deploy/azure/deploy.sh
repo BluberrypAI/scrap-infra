@@ -105,6 +105,8 @@ common_params() {
 		diagnosisOpenAiEndpoint="$(envval DIAGNOSIS_AZURE_OPENAI_ENDPOINT)"
 		diagnosisOpenAiDeployment="$(envval DIAGNOSIS_AZURE_OPENAI_DEPLOYMENT)"
 		diagnosisOpenAiApiVersion="${apiver:-2024-10-21}"
+		diagnosisAllowDocumentOcr="$( [ "$(envval DIAGNOSIS_ALLOW_DOCUMENT_OCR)" = true ] && echo true || echo false )"
+		diagnosisDocIntelEndpoint="$(envval DIAGNOSIS_AZURE_DOCINTEL_ENDPOINT)"
 		routeOpenAiEndpoint="$(envval ROUTE_AZURE_OPENAI_ENDPOINT)"
 		routeOpenAiDeployment="$(envval ROUTE_AZURE_OPENAI_DEPLOYMENT)"
 		googleClientId="${GOOGLE_CLIENT_ID:-}"
@@ -160,6 +162,10 @@ cmd_secrets() {
 	local key
 	key=$(envval DIAGNOSIS_AZURE_OPENAI_API_KEY)
 	kv_has "$vault" diagnosis-openai-key || kv_set "$vault" diagnosis-openai-key "${key:-unset}"
+	# OCR 키는 넣었을 때만 덮어씀(빈 값이면 기존 값 유지, 처음이면 unset)
+	key=$(envval DIAGNOSIS_AZURE_DOCINTEL_API_KEY)
+	if [ -n "$key" ]; then kv_set "$vault" diagnosis-docintel-key "$key"
+	else kv_has "$vault" diagnosis-docintel-key || kv_set "$vault" diagnosis-docintel-key unset; fi
 	key=$(envval ROUTE_AZURE_OPENAI_API_KEY)
 	kv_has "$vault" route-openai-key || kv_set "$vault" route-openai-key "${key:-unset}"
 	# 소셜 로그인 비밀값은 앱 등록 뒤 포털이나 az keyvault secret set으로 바꿈
