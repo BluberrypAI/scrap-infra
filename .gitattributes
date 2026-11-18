@@ -1,0 +1,4 @@
+# Bicep의 여러 줄 문자열(DB VM cloud-init)은 줄바꿈까지 customData에 들어감.
+# Windows에서 CRLF로 바뀌면 VM customData가 달라져 배포가 PropertyChangeNotAllowed로 실패함
+*.bicep text eol=lf
+*.sh text eol=lf
