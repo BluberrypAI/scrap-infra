@@ -87,6 +87,22 @@ DB VM에서 ACR 이미지(`:main`)를 한 번씩 실행함.
 
 App Service 컨테이너에는 SSH로 들어갈 수 없고, App Service 시작 명령은 따옴표를 풀지 않아 `sh -c "a && b"` 같은 명령이 문법 오류로 꺼짐. 그래서 diagnosis는 이미지 기본 명령(uvicorn)으로만 띄우고 마이그레이션은 여기서 실행함.
 
+### 시연용 업체 연결 (발표 시연 동안만)
+
+운영은 기본적으로 시연용(synthetic) 업체 연결을 막음. 기업 간 인계를 끝까지 보여 주려면 켜고, 발표가 끝나면 끔.
+
+```bash
+deploy/azure/deploy.sh demo on       # server 앱 설정 DEMO_FACILITY_BINDINGS=true (앱 재시작)
+# 각 계정이 소셜 로그인 → 기업 등록까지 마친 뒤
+deploy/azure/deploy.sh demo-bind b@회사.com jungang-gongju npc-chemical-hwaseong sarom-hwaseong-2
+deploy/azure/deploy.sh demo-bind c@회사.com veolia-doksan-hwaseong bgf-yesan bgf-hwaseong veolia-dspl-hwaseong
+deploy/azure/deploy.sh demo off      # 발표 후
+```
+
+- 업체 키 예시는 scrap-server `app/domains/transport/dev_accounts.py`의 `DEFAULT_BINDINGS` (PP 선별·파쇄, PP 펠렛, 알루미늄캔)
+- 화면에는 "시연용 계정"으로 표시됨. 실제 반입 승인 근거가 아님
+- `apps`를 다시 실행해도 지금 값을 유지함 (`DEMO_FACILITY_BINDINGS=false`로 넘기면 끔)
+
 ## 4. 도메인과 소셜 로그인
 
 하위 도메인(예: `app.<도메인>`)을 씀. 루트 도메인은 CNAME을 걸 수 없어 Front Door 연결이 번거로움.

@@ -46,6 +46,9 @@ param googleClientId string = ''
 param microsoftClientId string = ''
 param microsoftTenant string = 'common'
 
+@description('시연용(synthetic) 업체 연결 허용. 발표 시연 동안만 true')
+param demoFacilityBindings bool = false
+
 @description('WAF: IP 하나가 1분에 보낼 수 있는 요청 수')
 param wafRateLimitPerMinute int = 1000
 @description('경고 메일 받을 주소. 비우면 경고를 만들지 않음')
@@ -403,6 +406,7 @@ module server 'modules/webapp.bicep' = if (deployApps) {
       ENGINE_SERVICE_TOKEN: kvRef(kv.name, 'engine-service-token')
       AI_BASE_URL: internalUrl.route
       SCRAP_INTAKE_SERVICE_TOKEN: kvRef(kv.name, 'intake-service-token')
+      DEMO_FACILITY_BINDINGS: demoFacilityBindings ? 'true' : 'false'
     }
   }
   dependsOn: [dbVm]
