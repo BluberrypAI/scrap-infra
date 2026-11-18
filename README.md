@@ -1,5 +1,7 @@
 # scrap-infra
 
+**팀원 최종 통합본:** [레포 조합·새 문진→QR→완료 검증](docs/final-integration-20261118.md). 함께 반영할 PR과 실제 확인 범위는 이 기록에서 확인하세요.
+
 카카오 지도 전환: `.env`에 `VITE_KAKAO_MAP_APP_KEY`(JavaScript 키)와 `KAKAO_MOBILITY_REST_API_KEY`(REST 키)를 각각 넣고 `docker compose up -d --build web server`로 반영합니다. 카카오 콘솔에서 카카오맵 사용 설정을 ON으로 하고 JavaScript SDK 도메인에 로컬 `http://localhost:5178`과 운영 도메인을 등록해야 합니다. REST 키를 VITE 변수에 넣으면 안 됩니다. 로컬 설정은 운영 사이트에 자동 배포되지 않습니다.
 
 SCRAP의 **infra** 레포. 전체 통합 실행 compose, Azure 리소스 정의(Bicep), 함께 배포할 버전 조합 기록을 담당함.

@@ -12,7 +12,7 @@
 
 | 레포 | 기준 커밋 | 추가 통합한 팀원 PR | 역할 |
 | --- | --- | --- | --- |
-| scrap-web | 597e285 | #60 | 지정 경고 + 사진 입력 순서·카카오·운송·전체 이력 체크·완료 화면 |
+| scrap-web | 0b8f00f | #60 | 지정 경고 + 사진 입력 순서·카카오·운송·전체 이력 체크·완료 화면 |
 | scrap-server | a767bd5 | #58 | 서류 초안 예외 + 사진 우회 차단·주소/도로 API·운송 시작 |
 | scrap-diagnosis | fa6b189 | #15, #31 | 산 혼합 확인 + 지정 경고·세부 번호 확인 필요 안내·생성물 재빌드 |
 | scrap-route | 4bdaa70 | #23 | 기존 모델 검토 API 유지, 개발용 KG 탐색기는 제품 실행과 분리 |
@@ -71,3 +71,13 @@ docker compose run --rm server-seed
 브라우저는 **http://localhost:5178**. `127.0.0.1`로 바꾸지 않는다. 카카오 JS 키/REST 키와 Azure 값은 개인 .env 또는 배포 환경에 별도로 넣는다. Docker 이미지·Git에 키를 넣지 않았으므로 PR을 받는 것만으로 운영 키가 생기지 않는다. 상세 변수는 README와 .env.example 참조.
 
 이 기록은 기능 연결 시험이다. 실제 업체 인증·허가·반입 가능 용량·계약 단가·현장 계량·법률 전문가 승인은 별도로 확보해야 한다. 손실 5kg의 별도 잔재 로트와 질량수지 전체 추적은 이번 시험 범위가 아니다. 운영 배포는 팀원의 릴리스 절차로 별도 진행한다.
+
+## 함께 반영할 PR
+
+| 레포 | PR |
+| --- | --- |
+| scrap-web | [#61](https://github.com/BluberrypAI/scrap-web/pull/61) |
+| scrap-server | [#59](https://github.com/BluberrypAI/scrap-server/pull/59) |
+| scrap-diagnosis | [#32](https://github.com/BluberrypAI/scrap-diagnosis/pull/32) |
+| scrap-route | [#67](https://github.com/BluberrypAI/scrap-route/pull/67) |
+| scrap-infra | [#17](https://github.com/BluberrypAI/scrap-infra/pull/17) |
