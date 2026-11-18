@@ -6,6 +6,8 @@
 #   deploy/azure/deploy.sh images    # 4개 레포의 브랜치(기본 main)를 빌드해 ACR에 :main 태그로 올림
 #   deploy/azure/deploy.sh apps      # 2단계: App Service 앱 4개·배포 웹훅 + Front Door/WAF
 #   deploy/azure/deploy.sh seed      # 공정 참조 데이터 적재 (server 이미지가 ACR에 올라간 뒤)
+#   deploy/azure/deploy.sh demo on|off|status          # 시연용 업체 연결 허용 켜기·끄기 (server 앱 설정)
+#   deploy/azure/deploy.sh demo-bind <이메일> <업체키>...  # 로그인·기업 등록한 계정을 업체에 시연용으로 연결
 #   deploy/azure/deploy.sh all       # 위 네 단계를 순서대로
 #
 # 필요한 것: az(로그인 상태), docker, git. scrap-infra/.env에서 Azure OpenAI 값과 Mapbox 토큰을 읽음
@@ -15,6 +17,7 @@
 # 환경 변수로 바꿀 수 있는 값
 #   RG=TEAM_AIBIC2026_01_RG_EUS2  BRANCH=main
 #   ALERT_EMAIL=  CUSTOM_HOST=  GOOGLE_CLIENT_ID=  MICROSOFT_CLIENT_ID=  MICROSOFT_TENANT=common
+#   DEMO_FACILITY_BINDINGS=true|false (넘기지 않으면 지금 값 유지)
 
 set -euo pipefail
 
@@ -91,6 +94,7 @@ common_params() {
 	: "${GOOGLE_CLIENT_ID:=$(current_setting GOOGLE_CLIENT_ID)}"
 	: "${MICROSOFT_CLIENT_ID:=$(current_setting MICROSOFT_CLIENT_ID)}"
 	: "${MICROSOFT_TENANT:=$(current_setting MICROSOFT_TENANT)}"
+	: "${DEMO_FACILITY_BINDINGS:=$(current_setting DEMO_FACILITY_BINDINGS)}"
 	if [ -z "${CUSTOM_HOST:-}" ]; then
 		local url; url=$(current_setting FRONTEND_URL)
 		case "$url" in *azurefd.net*|"") ;; *) CUSTOM_HOST=${url#https://} ;; esac
@@ -110,6 +114,7 @@ common_params() {
 		googleClientId="${GOOGLE_CLIENT_ID:-}"
 		microsoftClientId="${MICROSOFT_CLIENT_ID:-}"
 		microsoftTenant="${MICROSOFT_TENANT:-common}"
+		demoFacilityBindings="$([ "${DEMO_FACILITY_BINDINGS:-}" = true ] && echo true || echo false)"
 		customHost="${CUSTOM_HOST:-}"
 		alertEmail="${ALERT_EMAIL:-}"
 	)
@@ -229,12 +234,48 @@ cmd_seed() {
 		"alembic upgrade head >/dev/null && python -m app.domains.treatment.import_catalog"
 }
 
+server_app() {
+	az webapp list -g "$RG" --query "[?starts_with(name,'scrap-server-')].name | [0]" -o tsv
+}
+
+# 시연용(synthetic) 업체 연결 허용. 바꾸면 server 앱이 다시 시작됨
+# apps를 다시 실행해도 지금 값을 유지함 (common_params)
+cmd_demo() {
+	need az
+	local app; app=$(server_app); [ -n "$app" ] || die "server 앱이 없음"
+	case "${1:-status}" in
+		on|off)
+			az webapp config appsettings set -g "$RG" -n "$app" 				--settings DEMO_FACILITY_BINDINGS="$([ "$1" = on ] && echo true || echo false)" -o none
+			echo "DEMO_FACILITY_BINDINGS=$([ "$1" = on ] && echo true || echo false) ($app 재시작됨)" ;;
+		status) echo "DEMO_FACILITY_BINDINGS=$(current_setting DEMO_FACILITY_BINDINGS)" ;;
+		*) die "demo on|off|status" ;;
+	esac
+}
+
+# 소셜 로그인 후 기업 등록까지 마친 계정을 업체 키에 시연용으로 연결 (실제 반입 승인 아님)
+cmd_demo_bind() {
+	need az
+	local email=${1:-}; shift || true
+	[ -n "$email" ] && [ $# -gt 0 ] || die "demo-bind <이메일> <업체키>..."
+	local args="--email $email" key
+	[[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || die "이메일 형식이 아님: $email"
+	for key in "$@"; do
+		[[ "$key" =~ ^[a-z0-9-]+$ ]] || die "업체 키 형식이 아님: $key"
+		args="$args --facility $key"
+	done
+	[ "$(current_setting DEMO_FACILITY_BINDINGS)" = true ] || echo "주의: DEMO_FACILITY_BINDINGS가 꺼져 있어 연결해도 화면에 나오지 않음 (demo on)"
+	# 스크립트는 DB만 씀. APP_ENV=prod면 JWT 등 앱 비밀값 검사에 걸려서 test로 실행함
+	run_on_db_vm scrap-server "postgresql+asyncpg://$DB_USER:PASSWORD@127.0.0.1:5432/scrap_server" 		"APP_ENV=test python -m app.domains.transport.dev_accounts $args"
+}
+
 case "${1:-}" in
 	core) cmd_core ;;
 	secrets) cmd_secrets ;;
 	images) cmd_images ;;
 	apps) cmd_apps ;;
 	seed) cmd_seed ;;
+	demo) cmd_demo "${2:-status}" ;;
+	demo-bind) shift; cmd_demo_bind "$@" ;;
 	all) cmd_core; cmd_secrets; cmd_images; cmd_apps ;;
 	*) sed -n '2,16p' "$0"; exit 2 ;;
 esac
