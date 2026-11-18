@@ -42,12 +42,24 @@ param diagnosisOpenAiApiVersion string = '2024-10-21'
 @description('시험성적서 스캔본·사진 OCR(Azure Document Intelligence). 켜면 문서 이미지가 전송되고 쪽마다 과금')
 param diagnosisAllowDocumentOcr bool = false
 param diagnosisDocIntelEndpoint string = ''
+@description('OCR 결과 대기(초). 서류 업로드도 server 대기(diagnosisEngineTimeoutSeconds) 안에 끝나야 해서 그보다 작게 둠')
+param diagnosisOcrTimeoutSeconds int = 120
+// 문진 한 턴은 추출·응답 각 최대 2회라 모델 대기 × 4가 상한임.
+// 앞단 상한: Front Door 출처 응답 대기(최대 240초) > App Service 요청 상한(약 230초) > server 대기
+@description('문진 엔진 모델 호출 1회 대기(초). 4회 합이 diagnosisEngineTimeoutSeconds보다 작아야 함')
+param diagnosisLlmTimeoutSeconds int = 40
+@description('server가 문진 엔진 응답을 기다리는 시간(초). App Service 요청 상한(약 230초)보다 작게 둠')
+@maxValue(220)
+param diagnosisEngineTimeoutSeconds int = 200
 param routeOpenAiEndpoint string = ''
 param routeOpenAiDeployment string = ''
 
 param googleClientId string = ''
 param microsoftClientId string = ''
 param microsoftTenant string = 'common'
+
+@description('시연용(synthetic) 업체 연결 허용. 발표 시연 동안만 true')
+param demoFacilityBindings bool = false
 
 @description('WAF: IP 하나가 1분에 보낼 수 있는 요청 수')
 param wafRateLimitPerMinute int = 1000
@@ -288,6 +300,8 @@ resource fd 'Microsoft.Cdn/profiles@2024-02-01' = if (deployApps) {
   name: 'afd-${prefix}'
   location: 'global'
   sku: { name: 'Standard_AzureFrontDoor' }
+  // 기본 60초면 AI가 느린 문진 턴을 Front Door가 먼저 끊음. 허용 최대값
+  properties: { originResponseTimeoutSeconds: 240 }
 }
 
 resource fdEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-02-01' = if (deployApps) {
@@ -344,6 +358,8 @@ module diagnosis 'modules/webapp.bicep' = if (deployApps) {
       ALLOW_DOCUMENT_OCR: diagnosisAllowDocumentOcr && !empty(diagnosisDocIntelEndpoint) ? 'true' : 'false'
       AZURE_DOCINTEL_ENDPOINT: diagnosisDocIntelEndpoint
       AZURE_DOCINTEL_API_KEY: kvRef(kv.name, 'diagnosis-docintel-key')
+      OCR_TIMEOUT_SECONDS: string(diagnosisOcrTimeoutSeconds)
+      LLM_TIMEOUT_SECONDS: string(diagnosisLlmTimeoutSeconds)
     }
   }
   dependsOn: [dbVm]
@@ -407,8 +423,10 @@ module server 'modules/webapp.bicep' = if (deployApps) {
       MICROSOFT_TENANT: microsoftTenant
       DIAGNOSIS_ENGINE_URL: internalUrl.diagnosis
       ENGINE_SERVICE_TOKEN: kvRef(kv.name, 'engine-service-token')
+      DIAGNOSIS_ENGINE_TIMEOUT_SECONDS: string(diagnosisEngineTimeoutSeconds)
       AI_BASE_URL: internalUrl.route
       SCRAP_INTAKE_SERVICE_TOKEN: kvRef(kv.name, 'intake-service-token')
+      DEMO_FACILITY_BINDINGS: demoFacilityBindings ? 'true' : 'false'
     }
   }
   dependsOn: [dbVm]
