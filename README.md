@@ -48,12 +48,15 @@ docker compose run --rm server-seed   # 처음 한 번: 처리 경로 공정 참
 | --- | --- |
 | `ENGINE_SERVICE_TOKEN`, `SCRAP_INTAKE_SERVICE_TOKEN` | 로컬 기본값으로 동작. 영문·숫자만 사용 (한글이 섞이면 server 요청이 500) |
 | `DIAGNOSIS_AZURE_OPENAI_*` | 문진이 자유 문장을 못 알아듣고 선택지 버튼으로만 진행 (`DIAGNOSIS_LLM_PROVIDER=off`와 같음) |
+| `DIAGNOSIS_ALLOW_DOCUMENT_OCR`, `DIAGNOSIS_AZURE_DOCINTEL_*` | 시험성적서 **스캔본·사진**을 읽지 못하고 "글자를 읽을 수 없음"으로 안내 (글자 있는 PDF는 읽음). 켜면 문서 이미지가 Azure Document Intelligence로 가고 쪽마다 과금 |
 | `ROUTE_AZURE_OPENAI_*` | 처리 경로의 업체 검토·웹 조사가 "미완료"로 남아 인수 요청을 보낼 수 없음 |
 | `VITE_MAPBOX_ACCESS_TOKEN` | 최신 web의 업체 지도는 MapLibre·OpenStreetMap 대체 표시 사용. 길찾기 키와 별개 |
 | `KAKAO_MOBILITY_REST_API_KEY` | 도로거리 조회를 하지 않으며 직선거리·도로거리 미확인으로 표시 |
 | `GOOGLE_*`, `MICROSOFT_*` | 소셜 로그인 불가. 개발용 로그인은 가능 |
 
 문진 모델의 응답을 기다리다가 server가 먼저 끊지 않도록 `DIAGNOSIS_LLM_TIMEOUT_SECONDS=60`, `DIAGNOSIS_ENGINE_TIMEOUT_SECONDS=300`을 기본으로 연결한다. **scrap-diagnosis의 SDK 중첩 재시도 제거 버전과 함께 사용한다.** 추출·응답 각 최대 2회에 60초를 적용한 대기 예산 240초에 규칙·DB 처리 여유를 둔 값이다. 모델 대기를 늘리면 서버 대기도 맞춰야 한다. 웹 nginx의 대기 기본값은 600초다. 실제 평균 응답시간이나 대규모 동시 부하를 보장하는 수치는 아니다.
+
+Azure 운영(`azure/main.bicep`)은 위 값을 그대로 쓰지 않는다. App Service 요청 상한(약 230초)과 Front Door 출처 응답 대기(최대 240초)에 걸리기 때문이다. 운영 값은 모델 대기 40초(4회 160초), server 대기 200초, Front Door 240초다. 파라미터 `diagnosisLlmTimeoutSeconds`, `diagnosisEngineTimeoutSeconds`로 바꿀 수 있고, 모델 대기 × 4가 server 대기보다 작아야 한다.
 
 server는 diagnosis의 `/health`가 성공한 후 시작한다. 규칙 로드·DB 준비가 끝나기 전에 첫 문진을 보내는 시작 순서 문제를 줄인다.
 

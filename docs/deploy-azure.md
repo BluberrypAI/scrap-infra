@@ -36,6 +36,7 @@
   az login --tenant soldeskms.onmicrosoft.com
   ```
 - `scrap-infra/.env`에 Azure OpenAI 값과 Mapbox 토큰 (로컬 실행용과 같은 값)
+- (선택) 시험성적서 스캔본·사진 OCR: `DIAGNOSIS_ALLOW_DOCUMENT_OCR=true`, `DIAGNOSIS_AZURE_DOCINTEL_ENDPOINT`, `DIAGNOSIS_AZURE_DOCINTEL_API_KEY`. 키는 `secrets` 단계에서 Key Vault `diagnosis-docintel-key`로 들어가고, 켜기·주소는 `core`/`apps` 단계 앱 설정으로 들어감. Key Vault에 실제 키가 없으면(처음 자리값 `unset` 포함) 경고를 내고 OCR을 끈 채 배포하므로, 키를 넣은 뒤 `secrets` → `apps` 순서로 다시 실행함. OCR 결과 대기는 `diagnosisOcrTimeoutSeconds`(기본 120초)이고, 업로드도 server 대기(`diagnosisEngineTimeoutSeconds`, 기본 200초) 안에 끝나야 해서 그보다 작게 둠. 문서 이미지가 Azure로 전송되고 쪽마다 과금. 글자 층이 있는 PDF는 OCR 없이도 읽음
 - DB VM 관리용 SSH 공개 키 `~/.ssh/scrap_key.pub` (다른 키는 `DB_SSH_KEY=<경로>`)
 - 레포 다섯 개를 형제 폴더로 둠 (`scrap-web`, `scrap-server`, `scrap-diagnosis`, `scrap-route`, `scrap-infra`)
 
@@ -86,6 +87,22 @@ DB VM에서 ACR 이미지(`:main`)를 한 번씩 실행함.
 - scrap-server: 마이그레이션 후 공정 참조 데이터 적재. 실행할 때마다 참조 데이터를 갈아끼움 (server는 시작할 때도 마이그레이션을 실행함)
 
 App Service 컨테이너에는 SSH로 들어갈 수 없고, App Service 시작 명령은 따옴표를 풀지 않아 `sh -c "a && b"` 같은 명령이 문법 오류로 꺼짐. 그래서 diagnosis는 이미지 기본 명령(uvicorn)으로만 띄우고 마이그레이션은 여기서 실행함.
+
+### 시연용 업체 연결 (발표 시연 동안만)
+
+운영은 기본적으로 시연용(synthetic) 업체 연결을 막음. 기업 간 인계를 끝까지 보여 주려면 켜고, 발표가 끝나면 끔.
+
+```bash
+deploy/azure/deploy.sh demo on       # server 앱 설정 DEMO_FACILITY_BINDINGS=true (앱 재시작)
+# 각 계정이 소셜 로그인 → 기업 등록까지 마친 뒤
+deploy/azure/deploy.sh demo-bind b@회사.com jungang-gongju npc-chemical-hwaseong sarom-hwaseong-2
+deploy/azure/deploy.sh demo-bind c@회사.com veolia-doksan-hwaseong bgf-yesan bgf-hwaseong veolia-dspl-hwaseong
+deploy/azure/deploy.sh demo off      # 발표 후
+```
+
+- 업체 키 예시는 scrap-server `app/domains/transport/dev_accounts.py`의 `DEFAULT_BINDINGS` (PP 선별·파쇄, PP 펠렛, 알루미늄캔)
+- 화면에는 "시연용 계정"으로 표시됨. 실제 반입 승인 근거가 아님
+- `apps`를 다시 실행해도 지금 값을 유지함 (`DEMO_FACILITY_BINDINGS=false`로 넘기면 끔)
 
 ## 4. 도메인과 소셜 로그인
 
