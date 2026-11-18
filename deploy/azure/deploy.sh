@@ -102,6 +102,14 @@ common_params() {
 	deployer=$(az ad signed-in-user show --query id -o tsv)
 	apiver=$(envval DIAGNOSIS_AZURE_OPENAI_API_VERSION)
 	[ -f "$DB_SSH_KEY" ] || die "DB VM용 SSH 공개 키가 없음: $DB_SSH_KEY (DB_SSH_KEY로 지정)"
+	# OCR은 Key Vault에 실제 키가 있을 때만 켬. 키 자리값(unset)이면 엔진이 켜진 것으로 보고 업로드마다 401이 남
+	local ocr=false vault ocrkey
+	if [ "$(envval DIAGNOSIS_ALLOW_DOCUMENT_OCR)" = true ]; then
+		vault=$(kv_name)
+		ocrkey=$([ -n "$vault" ] && kv_get "$vault" diagnosis-docintel-key 2>/dev/null || true)
+		if [ -n "$ocrkey" ] && [ "$ocrkey" != unset ]; then ocr=true
+		else echo "경고: Key Vault에 OCR 키(diagnosis-docintel-key)가 없어 OCR을 끈 채 배포함. secrets 단계 뒤 apps를 다시 실행" >&2; fi
+	fi
 	PARAMS=(
 		deployerObjectId="$deployer"
 		postgresAdminPassword="$(pg_password)"
@@ -109,6 +117,8 @@ common_params() {
 		diagnosisOpenAiEndpoint="$(envval DIAGNOSIS_AZURE_OPENAI_ENDPOINT)"
 		diagnosisOpenAiDeployment="$(envval DIAGNOSIS_AZURE_OPENAI_DEPLOYMENT)"
 		diagnosisOpenAiApiVersion="${apiver:-2024-10-21}"
+		diagnosisAllowDocumentOcr="$ocr"
+		diagnosisDocIntelEndpoint="$(envval DIAGNOSIS_AZURE_DOCINTEL_ENDPOINT)"
 		routeOpenAiEndpoint="$(envval ROUTE_AZURE_OPENAI_ENDPOINT)"
 		routeOpenAiDeployment="$(envval ROUTE_AZURE_OPENAI_DEPLOYMENT)"
 		googleClientId="${GOOGLE_CLIENT_ID:-}"
@@ -165,6 +175,10 @@ cmd_secrets() {
 	local key
 	key=$(envval DIAGNOSIS_AZURE_OPENAI_API_KEY)
 	kv_has "$vault" diagnosis-openai-key || kv_set "$vault" diagnosis-openai-key "${key:-unset}"
+	# OCR 키는 넣었을 때만 덮어씀(빈 값이면 기존 값 유지, 처음이면 unset)
+	key=$(envval DIAGNOSIS_AZURE_DOCINTEL_API_KEY)
+	if [ -n "$key" ]; then kv_set "$vault" diagnosis-docintel-key "$key"
+	else kv_has "$vault" diagnosis-docintel-key || kv_set "$vault" diagnosis-docintel-key unset; fi
 	key=$(envval ROUTE_AZURE_OPENAI_API_KEY)
 	kv_has "$vault" route-openai-key || kv_set "$vault" route-openai-key "${key:-unset}"
 	# 소셜 로그인 비밀값은 앱 등록 뒤 포털이나 az keyvault secret set으로 바꿈

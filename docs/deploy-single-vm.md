@@ -77,6 +77,7 @@ nano .env
 | `BASIC_AUTH_HASH` | 아래 명령으로 만든 해시를 **작은따옴표**로 감싸 넣음 |
 | `ENGINE_SERVICE_TOKEN`, `SCRAP_INTAKE_SERVICE_TOKEN`, `JWT_SECRET`, `SESSION_SECRET` | 각각 `openssl rand -hex 24`로 새로 만듦 |
 | `DIAGNOSIS_AZURE_OPENAI_*`, `ROUTE_AZURE_OPENAI_*` | Azure OpenAI 값 |
+| `DIAGNOSIS_ALLOW_DOCUMENT_OCR`, `DIAGNOSIS_AZURE_DOCINTEL_*` | 시험성적서 스캔본·사진 OCR. 쓰려면 `true`와 Document Intelligence 주소·키 (쪽마다 과금) |
 | `VITE_MAPBOX_ACCESS_TOKEN` | 지도 토큰 (없으면 지도만 안 나옴) |
 
 `BACKEND_URL`, `FRONTEND_URL`, `SERVER_APP_ENV`, `VITE_ENABLE_DEV_LOGIN`, `*_PORT`는 배포 덮어쓰기가 정하므로 두어도 됨.

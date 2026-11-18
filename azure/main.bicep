@@ -39,6 +39,11 @@ param customHost string = ''
 param diagnosisOpenAiEndpoint string = ''
 param diagnosisOpenAiDeployment string = ''
 param diagnosisOpenAiApiVersion string = '2024-10-21'
+@description('시험성적서 스캔본·사진 OCR(Azure Document Intelligence). 켜면 문서 이미지가 전송되고 쪽마다 과금')
+param diagnosisAllowDocumentOcr bool = false
+param diagnosisDocIntelEndpoint string = ''
+@description('OCR 결과 대기(초). 서류 업로드도 server 대기(diagnosisEngineTimeoutSeconds) 안에 끝나야 해서 그보다 작게 둠')
+param diagnosisOcrTimeoutSeconds int = 120
 // 문진 한 턴은 추출·응답 각 최대 2회라 모델 대기 × 4가 상한임.
 // 앞단 상한: Front Door 출처 응답 대기(최대 240초) > App Service 요청 상한(약 230초) > server 대기
 @description('문진 엔진 모델 호출 1회 대기(초). 4회 합이 diagnosisEngineTimeoutSeconds보다 작아야 함')
@@ -350,6 +355,10 @@ module diagnosis 'modules/webapp.bicep' = if (deployApps) {
       AZURE_OPENAI_DEPLOYMENT: diagnosisOpenAiDeployment
       AZURE_OPENAI_API_VERSION: diagnosisOpenAiApiVersion
       AZURE_OPENAI_API_KEY: kvRef(kv.name, 'diagnosis-openai-key')
+      ALLOW_DOCUMENT_OCR: diagnosisAllowDocumentOcr && !empty(diagnosisDocIntelEndpoint) ? 'true' : 'false'
+      AZURE_DOCINTEL_ENDPOINT: diagnosisDocIntelEndpoint
+      AZURE_DOCINTEL_API_KEY: kvRef(kv.name, 'diagnosis-docintel-key')
+      OCR_TIMEOUT_SECONDS: string(diagnosisOcrTimeoutSeconds)
       LLM_TIMEOUT_SECONDS: string(diagnosisLlmTimeoutSeconds)
     }
   }
