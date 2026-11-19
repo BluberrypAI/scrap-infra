@@ -75,6 +75,7 @@ ALERT_EMAIL=<경고 받을 메일> deploy/azure/deploy.sh apps      # App Servic
 | Secret | `ACR_PASSWORD` | `az acr credential show -n <acr> --query "passwords[0].value" -o tsv \| Set-Clipboard` |
 | Secret | `DISCORD_WEBHOOK_URL` | Discord 채널 → 연동 → 웹후크 |
 | Secret (scrap-web만) | `VITE_MAPBOX_ACCESS_TOKEN` | 지도 토큰 |
+| Secret (scrap-web만, 선택) | `VITE_KAKAO_MAP_APP_KEY` | 카카오 지도 JavaScript 키(REST 키 아님). 카카오 앱에 `https://app.scrap-ai.org` 도메인 등록 필요 |
 
 ## 3. 데이터 (처음 한 번, 참조 데이터가 바뀌면 다시)
 
