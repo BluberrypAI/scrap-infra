@@ -55,3 +55,11 @@ docker compose up -d --build web
 관련 PR: [route #69](https://github.com/BluberrypAI/scrap-route/pull/69), [server #61](https://github.com/BluberrypAI/scrap-server/pull/61), [web #66](https://github.com/BluberrypAI/scrap-web/pull/66).
 
 DB 작업 선점은 서버 복제본 사이에 적용하지만 모델 동시 호출 상한 3은 route 프로세스별입니다. 운영 전체 Azure 할당량을 관리하는 분산 큐는 후속 범위입니다. 예정 경로는 카카오 자동차 거리 우선 계산이며 화물차 전용 제한이나 실제 차량 GPS 기록이 아닙니다.
+
+## 후속: 여러 물량에서 공개 근거 재사용
+
+route/server/web의 같은 PR에 공개 근거 공용 캐시와 SCRAP 보라색 Orb를 추가했습니다. 기존 PostgreSQL `treatment_snapshots`를 사용해 새 migration·키는 없습니다. 공개 근거는7일 유효·최대1024건이며 출처·검토 버전이 바뀌면 다시 확인합니다. 사진·상태·기업별 답변·물량 판단은 공용으로 저장하지 않습니다.
+
+실제 Azure PP9개 후보 측정: 공용 캐시를 처음 채우는 실행85.729초, 설명이 다른 새 물량35.629초(공개 추가 호출0회·사진1회·물량1회)였습니다. 서버 재생성 뒤 새 웹 PP 문진/물량에서도 공개 캐시9건 재사용·공개 추가 호출0회로 약39.75초, 정확히 같은 웹 입력 재검토는 약3.93초·모델 호출0회였습니다. 한 번의 합성 시험이며 고정 응답시간이나 실제 업체 수용 검증을 뜻하지 않습니다.
+
+server642개 / route588개(+하위24개·환경 의존skip72) / web102개 통과. 새 문진→물량→공개 PP 사진→검토에서 보라색 Orb·진행 문구·재사용 표시와 후보1곳의 인수 요청 버튼을 확인했습니다. 공개 근거의 만료를 기존 물량 캐시로 우회하지 않는 것도 검사했습니다. 자세한 범위는 scrap-server `docs/public-review-cache-validation-20261119.md`에 있습니다.
