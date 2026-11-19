@@ -213,6 +213,7 @@ cmd_images() {
 	build_push scrap-route "" "$server"
 	build_push scrap-web "" "$server" \
 		--build-arg VITE_MAPBOX_ACCESS_TOKEN="$(envval VITE_MAPBOX_ACCESS_TOKEN)" \
+		--build-arg VITE_KAKAO_MAP_APP_KEY="$(envval VITE_KAKAO_MAP_APP_KEY)" \
 		--build-arg VITE_ENABLE_DEV_LOGIN=false
 }
 
