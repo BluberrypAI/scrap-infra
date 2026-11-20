@@ -118,3 +118,11 @@ server가 이 API를 쓰기 시작하면 compose에 추가함.
 OSRM은 최단시간 경로의 거리를 반환한다. 모든 가능한 길 중 최단거리·실시간 교통·실제 GPS 주행 기록이 아니다. 키 없는 공개 데모 옵션은 카카오 실패를 숨겨 대체하는 방식이 아니며 카카오 키가 있으면 카카오를 우선 사용한다.
 
 출처: https://routing.openstreetmap.de/about.html / https://project-osrm.org/docs/v5.24.0/api/#table-service
+
+## 거리순 검토 업데이트 적용
+
+새 기능은 scrap-route → scrap-server → scrap-web 순서로 함께 적용합니다. route 건강 확인 후 server를 시작하도록 Compose를 맞췄습니다. 추가 큐 서비스·DB 마이그레이션·새 비밀값은 필요하지 않습니다. 기존 카카오 REST 키와 웹 JavaScript 키가 필요합니다.
+
+새 웹은 오래 기다리는 HTTP 요청 대신 DB에 저장된 검토 작업과 진행 조회를 사용합니다. 기존 동기 검토 API의 대기 시간을 늘리는 방식으로 해결하지 않습니다. 운영 반영은 각 develop PR 병합 후 팀의 main 릴리스 절차를 따릅니다.
+
+실호출 소요 시간, 검증한 범위와 적용 순서는 [검증 기록](docs/review-progress-verification-20261119.md)에 정리했습니다.
