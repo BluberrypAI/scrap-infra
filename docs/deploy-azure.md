@@ -105,6 +105,19 @@ deploy/azure/deploy.sh demo off      # 발표 후
 - 화면에는 "시연용 계정"으로 표시됨. 실제 반입 승인 근거가 아님
 - `apps`를 다시 실행해도 지금 값을 유지함 (`DEMO_FACILITY_BINDINGS=false`로 넘기면 끔)
 
+### 처리업체(B·C) 로그인 계정
+
+인계를 받는 처리업체는 회원가입 없이 공정표 업체마다 발급한 아이디·비밀번호로 로그인함 (scrap-server `docs/specs/facility-password-login.md`). server 이미지가 main에 올라간 뒤 실행함.
+
+```bash
+deploy/azure/deploy.sh facility-accounts           # 업체 전체 발급. 아이디 = 업체 키 (예: sarom-hwaseong-2)
+deploy/azure/deploy.sh facility-password           # 공통 비밀번호 보기 (Key Vault facility-login-password)
+deploy/azure/deploy.sh facility-accounts --force   # demo-bind 등으로 다른 계정에 연결된 업체도 옮김
+```
+
+- 연결은 synthetic이 아니라서 `demo on` 없이도 수신 업체로 보임
+- 다시 실행해도 계정이 늘지 않음. Key Vault 비밀번호를 바꾼 뒤 실행하면 전체 비밀번호가 바뀜
+
 ## 4. 도메인과 소셜 로그인
 
 하위 도메인(예: `app.<도메인>`)을 씀. 루트 도메인은 CNAME을 걸 수 없어 Front Door 연결이 번거로움.
