@@ -8,6 +8,8 @@
 #   deploy/azure/deploy.sh seed      # 공정 참조 데이터 적재 (server 이미지가 ACR에 올라간 뒤)
 #   deploy/azure/deploy.sh demo on|off|status          # 시연용 업체 연결 허용 켜기·끄기 (server 앱 설정)
 #   deploy/azure/deploy.sh demo-bind <이메일> <업체키>...  # 로그인·기업 등록한 계정을 업체에 시연용으로 연결
+#   deploy/azure/deploy.sh facility-accounts [--force]  # 공정표 업체 전체에 아이디·비밀번호 계정 발급 (아이디 = 업체 키)
+#   deploy/azure/deploy.sh facility-password            # 처리업체 계정 공통 비밀번호 보기 (시연용이라 출력함)
 #   deploy/azure/deploy.sh all       # 위 네 단계를 순서대로
 #
 # 필요한 것: az(로그인 상태), docker, git. scrap-infra/.env에서 Azure OpenAI 값과 Mapbox 토큰을 읽음
@@ -283,6 +285,30 @@ cmd_demo_bind() {
 	run_on_db_vm scrap-server "postgresql+asyncpg://$DB_USER:PASSWORD@127.0.0.1:5432/scrap_server" 		"APP_ENV=test python -m app.domains.transport.dev_accounts $args"
 }
 
+# 처리업체(B·C) 로그인 계정 일괄 발급 (scrap-server docs/specs/facility-password-login.md)
+# 공정표 업체마다 아이디 = 업체 키, 비밀번호는 공통. 비밀번호는 처음 실행할 때 만들어 Key Vault에 둠
+# 연결은 synthetic=false라 DEMO_FACILITY_BINDINGS와 상관없이 화면에 보임
+# 다른 계정에 이미 연결된 업체는 건너뜀. --force면 이 계정으로 옮김
+# 다시 실행해도 계정을 새로 만들지 않고 비밀번호·연결만 맞춤
+cmd_facility_accounts() {
+	need az; need openssl
+	local force=${1:-} vault pw
+	[ -z "$force" ] || [ "$force" = --force ] || die "facility-accounts [--force]"
+	vault=$(kv_name); [ -n "$vault" ] || die "Key Vault가 없음"
+	kv_has "$vault" facility-login-password || kv_set "$vault" facility-login-password "Scrap$(openssl rand -hex 6)"
+	pw=$(kv_get "$vault" facility-login-password)
+	[[ "$pw" =~ ^[A-Za-z0-9]+$ ]] || die "facility-login-password는 영문·숫자만 쓸 수 있음"
+	# 비밀번호는 표준 입력으로 넘김. APP_ENV=test는 demo-bind와 같은 이유 (앱 비밀값 검사 회피)
+	run_on_db_vm scrap-server "postgresql+asyncpg://$DB_USER:PASSWORD@127.0.0.1:5432/scrap_server" 		"echo $pw | APP_ENV=test python -m app.domains.auth.facility_accounts --all --password-stdin $force"
+	echo "비밀번호: deploy/azure/deploy.sh facility-password"
+}
+
+cmd_facility_password() {
+	need az
+	local vault; vault=$(kv_name); [ -n "$vault" ] || die "Key Vault가 없음"
+	kv_get "$vault" facility-login-password
+}
+
 case "${1:-}" in
 	core) cmd_core ;;
 	secrets) cmd_secrets ;;
@@ -291,6 +317,8 @@ case "${1:-}" in
 	seed) cmd_seed ;;
 	demo) cmd_demo "${2:-status}" ;;
 	demo-bind) shift; cmd_demo_bind "$@" ;;
+	facility-accounts) cmd_facility_accounts "${2:-}" ;;
+	facility-password) cmd_facility_password ;;
 	all) cmd_core; cmd_secrets; cmd_images; cmd_apps ;;
-	*) sed -n '2,16p' "$0"; exit 2 ;;
+	*) sed -n '2,18p' "$0"; exit 2 ;;
 esac
