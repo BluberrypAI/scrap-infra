@@ -61,6 +61,9 @@ param microsoftTenant string = 'common'
 @description('시연용(synthetic) 업체 연결 허용. 발표 시연 동안만 true')
 param demoFacilityBindings bool = false
 
+@description('카카오 REST 키(Key Vault kakao-rest-api-key)를 server에 넣을지. 키가 있으면 주소 검색은 Kakao Local, 도로 거리는 Kakao Mobility를 씀')
+param kakaoRestApiKeyEnabled bool = false
+
 @description('WAF: IP 하나가 1분에 보낼 수 있는 요청 수')
 param wafRateLimitPerMinute int = 1000
 @description('경고 메일 받을 주소. 비우면 경고를 만들지 않음')
@@ -427,6 +430,8 @@ module server 'modules/webapp.bicep' = if (deployApps) {
       AI_BASE_URL: internalUrl.route
       SCRAP_INTAKE_SERVICE_TOKEN: kvRef(kv.name, 'intake-service-token')
       DEMO_FACILITY_BINDINGS: demoFacilityBindings ? 'true' : 'false'
+      // 키가 없을 때 Key Vault 참조를 넣으면 참조 문자열이 키로 넘어가 카카오 호출이 401이 남. 빈 값이면 주소 검색은 Photon으로 대신함
+      KAKAO_MOBILITY_REST_API_KEY: kakaoRestApiKeyEnabled ? kvRef(kv.name, 'kakao-rest-api-key') : ''
     }
   }
   dependsOn: [dbVm]
