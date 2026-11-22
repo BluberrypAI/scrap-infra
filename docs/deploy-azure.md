@@ -37,6 +37,7 @@
   ```
 - `scrap-infra/.env`에 Azure OpenAI 값과 Mapbox 토큰 (로컬 실행용과 같은 값)
 - (선택) 시험성적서 스캔본·사진 OCR: `DIAGNOSIS_ALLOW_DOCUMENT_OCR=true`, `DIAGNOSIS_AZURE_DOCINTEL_ENDPOINT`, `DIAGNOSIS_AZURE_DOCINTEL_API_KEY`. 키는 `secrets` 단계에서 Key Vault `diagnosis-docintel-key`로 들어가고, 켜기·주소는 `core`/`apps` 단계 앱 설정으로 들어감. Key Vault에 실제 키가 없으면(처음 자리값 `unset` 포함) 경고를 내고 OCR을 끈 채 배포하므로, 키를 넣은 뒤 `secrets` → `apps` 순서로 다시 실행함. OCR 결과 대기는 `diagnosisOcrTimeoutSeconds`(기본 120초)이고, 업로드도 server 대기(`diagnosisEngineTimeoutSeconds`, 기본 200초) 안에 끝나야 해서 그보다 작게 둠. 문서 이미지가 Azure로 전송되고 쪽마다 과금. 글자 층이 있는 PDF는 OCR 없이도 읽음
+- (선택) 카카오 REST 키 `KAKAO_MOBILITY_REST_API_KEY`: 있으면 server가 사업장 주소 검색에 Kakao Local, 처리업체까지 도로 거리에 Kakao Mobility를 씀. 없으면 주소 검색은 공개 Photon으로 대신하고 도로 거리는 나오지 않음. `secrets` 단계에서 Key Vault `kakao-rest-api-key`로 들어감(`.env` 값이 없으면 server 앱 설정에 직접 넣어 둔 값을 옮김). Key Vault에 키가 있을 때만 `apps` 단계가 server 설정에 Key Vault 참조로 넣음. server 앱 설정에만 키가 있고 Key Vault에 없으면 `apps`가 멈춤(그대로 배포하면 키가 지워지므로 `secrets`를 먼저 실행)
 - DB VM 관리용 SSH 공개 키 `~/.ssh/scrap_key.pub` (다른 키는 `DB_SSH_KEY=<경로>`)
 - 레포 다섯 개를 형제 폴더로 둠 (`scrap-web`, `scrap-server`, `scrap-diagnosis`, `scrap-route`, `scrap-infra`)
 
@@ -53,7 +54,7 @@ ALERT_EMAIL=<경고 받을 메일> deploy/azure/deploy.sh apps      # App Servic
 | 단계 | 만드는 것 |
 | --- | --- |
 | core | VNet(`snet-apps`, `snet-db`), NAT 게이트웨이, DB VM(PostgreSQL 17, DB 2개는 첫 부팅 때 생성), Key Vault, ACR, 앱용 관리 ID, Log Analytics, Application Insights, DB VM CPU 경고 |
-| secrets | JWT·세션 비밀값, 서비스 토큰 2개, DB 주소 2개, OpenAI 키 2개, 소셜 로그인 비밀값 자리(`unset`) |
+| secrets | JWT·세션 비밀값, 서비스 토큰 2개, DB 주소 2개, OpenAI 키 2개, 소셜 로그인 비밀값 자리(`unset`), 카카오 REST 키(있을 때만) |
 | apps | App Service 플랜(B2)과 앱 4개, ACR 웹훅 4개, Front Door와 WAF(IP당 분당 요청 수 제한), server 5xx 경고 |
 
 - 비밀값은 화면에 출력하지 않음. DB 비밀번호는 Key Vault `postgres-admin-password`에만 있음
