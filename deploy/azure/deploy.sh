@@ -112,6 +112,13 @@ common_params() {
 		if [ -n "$ocrkey" ] && [ "$ocrkey" != unset ]; then ocr=true
 		else echo "경고: Key Vault에 OCR 키(diagnosis-docintel-key)가 없어 OCR을 끈 채 배포함. secrets 단계 뒤 apps를 다시 실행" >&2; fi
 	fi
+	# 카카오 REST 키도 Key Vault에 실제 키가 있을 때만 server에 넣음
+	local kakao=false
+	vault=$(kv_name)
+	if [ -n "$vault" ] && kv_has "$vault" kakao-rest-api-key; then kakao=true
+	elif [ -n "$(current_setting KAKAO_MOBILITY_REST_API_KEY)" ]; then
+		die "server 앱 설정에만 카카오 REST 키가 있음. 이대로 배포하면 지워지므로 secrets를 먼저 실행해 Key Vault로 옮김"
+	fi
 	PARAMS=(
 		deployerObjectId="$deployer"
 		postgresAdminPassword="$(pg_password)"
@@ -127,6 +134,7 @@ common_params() {
 		microsoftClientId="${MICROSOFT_CLIENT_ID:-}"
 		microsoftTenant="${MICROSOFT_TENANT:-common}"
 		demoFacilityBindings="$([ "${DEMO_FACILITY_BINDINGS:-}" = true ] && echo true || echo false)"
+		kakaoRestApiKeyEnabled="$kakao"
 		customHost="${CUSTOM_HOST:-}"
 		alertEmail="${ALERT_EMAIL:-}"
 	)
@@ -183,6 +191,14 @@ cmd_secrets() {
 	else kv_has "$vault" diagnosis-docintel-key || kv_set "$vault" diagnosis-docintel-key unset; fi
 	key=$(envval ROUTE_AZURE_OPENAI_API_KEY)
 	kv_has "$vault" route-openai-key || kv_set "$vault" route-openai-key "${key:-unset}"
+	# 카카오 REST 키: .env 값이 있으면 덮어씀. 없으면 server 앱 설정에 직접 넣어 둔 값을 옮김
+	# 둘 다 없으면 만들지 않음(자리값을 넣으면 카카오 호출이 401이 나서 Photon 대체도 안 됨)
+	key=$(envval KAKAO_MOBILITY_REST_API_KEY)
+	if [ -z "$key" ]; then
+		key=$(current_setting KAKAO_MOBILITY_REST_API_KEY)
+		case "$key" in @Microsoft.KeyVault*) key="" ;; esac
+	fi
+	if [ -n "$key" ]; then kv_set "$vault" kakao-rest-api-key "$key"; fi
 	# 소셜 로그인 비밀값은 앱 등록 뒤 포털이나 az keyvault secret set으로 바꿈
 	for s in google-client-secret microsoft-client-secret; do
 		kv_has "$vault" $s || kv_set "$vault" $s unset
