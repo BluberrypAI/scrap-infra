@@ -44,7 +44,8 @@ need() { command -v "$1" >/dev/null || die "$1 이 필요함"; }
 # .env에서 값 하나 읽기 (출력하지 않음)
 envval() {
 	[ -f "$INFRA/.env" ] || { echo ""; return; }
-	grep -E "^$1=" "$INFRA/.env" | tail -1 | cut -d= -f2- | tr -d '\r' | sed -E "s/^['\"]|['\"]$//g"
+	# 없는 키면 grep이 1을 돌려줘 set -e·pipefail에서 스크립트가 조용히 끝나므로 빈 값으로 받음
+	{ grep -E "^$1=" "$INFRA/.env" || true; } | tail -1 | cut -d= -f2- | tr -d '\r' | sed -E "s/^['\"]|['\"]$//g"
 }
 
 # 리소스 그룹에 다른 팀원 리소스도 있으므로 이 구성이 만든 이름만 고름
